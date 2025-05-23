@@ -34,6 +34,10 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.timer_thread: threading.Thread | None = None
         self.stream: sd.InputStream | None = None
         self.audio_frames: list[np.ndarray] = []
+        
+        # Icon paths (ensure the img folder is in your project directory)
+        self.mic_icon_path = os.path.join("img", "microphone.svg")
+        self.stop_icon_path = os.path.join("img", "stop.svg")
 
         self.build_ui()
 
@@ -49,10 +53,14 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.level = Gtk.LevelBar(min_value=0.0, max_value=1.0)
         box.append(self.level)
 
-        self.record_btn = Gtk.Button(label="🎤")
+
+        self.icon_image = Gtk.Image.new_from_file(self.mic_icon_path)
+        self.record_btn = Gtk.Button()
         self.record_btn.set_size_request(120, 120)
+        self.record_btn.set_child(self.icon_image)
         self.record_btn.connect("clicked", self.toggle_recording)
         box.append(self.record_btn)
+        
 
         self.status_label = Gtk.Label(label="Press to start recording")
         box.append(self.status_label)
@@ -84,7 +92,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.is_recording = True
         self.start_time = time.time()
         self.status_label.set_text("Recording... Press to stop.")
-        self.record_btn.set_label("⏸")
+        
+         # --- Swap to stop icon ---
+        self.icon_image.set_from_file(self.stop_icon_path)
         self.audio_frames.clear()
         try:
             self.stream = sd.InputStream(samplerate=16000, channels=1, callback=self.audio_callback)
@@ -98,7 +108,8 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 
     def stop_recording(self) -> None:
         self.is_recording = False
-        self.record_btn.set_label("🎤")
+        # --- Swap back to mic icon ---
+        self.icon_image.set_from_file(self.mic_icon_path)
         if self.stream:
             try:
                 self.stream.stop()
