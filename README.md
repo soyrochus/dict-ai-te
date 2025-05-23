@@ -2,7 +2,7 @@
 
 **dict-ai-te** is a minimalist desktop application for recording voice notes, transcribing them to text (via the OpenAI API), and saving transcripts to files.
 
-The app is designed for simplicity, with a clean UI inspired by modern voice recorders. It’s built using Python and Tkinter for broad compatibility.
+The app is designed for simplicity, with a clean UI inspired by modern voice recorders. It’s built using Python and GTK 4 via PyGObject for modern Linux desktop integration.
 
 ![Dict-ai-te windows](img/dict-ai-te-window.png)
 
@@ -10,6 +10,7 @@ The app is designed for simplicity, with a clean UI inspired by modern voice rec
 
 * Record audio notes directly from your microphone.
 * See real-time status and elapsed recording time.
+* Live waveform display during recording.
 * Automatic transcription using the OpenAI Whisper API.
 * Edit or correct transcribed text in the main window.
 * Save transcripts as plain text files.
@@ -46,10 +47,10 @@ uv sync
 ```
 
 > **Note:**
-> On Linux, you may need to install Tkinter system-wide:
+> On Linux, PyGObject requires the `python3-gi` package:
 >
 > ```sh
-> sudo apt install python3-tk
+> sudo apt install python3-gi
 > ```
 > And PortAudio for microphone access:
 >

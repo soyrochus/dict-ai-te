@@ -10,4 +10,5 @@ dependencies = [
     "soundfile",
     "openai>=1",
     "python-dotenv",
+    "PyGObject",
 ]
