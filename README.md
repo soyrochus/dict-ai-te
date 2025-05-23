@@ -8,8 +8,9 @@ The app is designed for simplicity, with a clean UI inspired by modern voice rec
 
 ## Features
 
-* Record audio notes directly from the app.
+* Record audio notes directly from your microphone.
 * See real-time status and elapsed recording time.
+* Automatic transcription using the OpenAI Whisper API.
 * Edit or correct transcribed text in the main window.
 * Save transcripts as plain text files.
 * Simple configuration using `.env` or environment variables for the OpenAI API key.
@@ -50,11 +51,16 @@ uv sync
 > ```sh
 > sudo apt install python3-tk
 > ```
+> And PortAudio for microphone access:
+>
+> ```sh
+> sudo apt install portaudio19-dev
+> ```
 
 ### 4. Run the Application
 
 ```bash
-python dict_ai_te.py
+python -m dictaite
 ```
 
 ## Configuration
