@@ -47,16 +47,29 @@ uv sync
 ```
 
 > **Note:**
-> On Linux, PyGObject requires the `python3-gi` package:
->
-> ```sh
-> sudo apt install python3-gi
-> ```
-> And PortAudio for microphone access:
->
-> ```sh
-> sudo apt install portaudio19-dev
-> ```
+On Linux, the GTK4 library which the application uses, requires installation of various packages:
+
+```sh
+sudo apt update
+sudo apt install -y \
+  libgtk-4-dev \
+  libgirepository-2.0-dev \
+  libcairo2-dev \
+  pkg-config \
+  python3-dev \
+  python3-gi \
+  python3-gi-cairo \
+  gir1.2-gtk-4.0
+
+ ```
+
+And for sound, you need to install:
+
+```sh
+ sudo apt install libportaudio2
+
+ ```
+
 
 ### 4. Run the Application
 
