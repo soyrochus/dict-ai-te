@@ -1,91 +1,237 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import time
+"""dict-ai-te GTK recorder/transcriber."""
+
+from __future__ import annotations
+
+import os
+import tempfile
 import threading
+import time
 
-class DictAiTeApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("dict-ai-te")
+import numpy as np
+import sounddevice as sd
+import soundfile as sf
+from dotenv import load_dotenv
+from openai import OpenAI
 
-        # State
+import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+
+
+class DictAiTeWindow(Gtk.ApplicationWindow):
+    """Main application window."""
+
+    def __init__(self, app: Gtk.Application) -> None:
+        super().__init__(application=app, title="dict-ai-te")
+        self.set_default_size(400, 500)
+        load_dotenv()
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.client = OpenAI(api_key=api_key) if api_key else None
+
         self.is_recording = False
-        self.start_time = None
+        self.start_time: float | None = None
         self.elapsed_seconds = 0
-        self.timer_thread = None
+        self.timer_thread: threading.Thread | None = None
+        self.stream: sd.InputStream | None = None
+        self.audio_frames: list[np.ndarray] = []
 
-        # Layout
-        self.create_widgets()
+        self.build_ui()
 
-    def create_widgets(self):
-        # Waveform mock (colored bar)
-        self.waveform = tk.Canvas(self.root, width=400, height=40, bg="#e0e0e0", highlightthickness=0)
-        self.waveform.pack(pady=(10,0))
+    # ------------------------------------------------------------------
+    # UI
+    # ------------------------------------------------------------------
 
-        # Circle record button on Canvas
-        self.btn_canvas = tk.Canvas(self.root, width=120, height=120, bg=self.root["bg"], highlightthickness=0)
-        self.btn_canvas.pack()
-        self.circle = self.btn_canvas.create_oval(10, 10, 110, 110, fill="#fa5457", outline="#e03e41", width=4)
-        self.btn_text = self.btn_canvas.create_text(60, 60, text="🎤", font=("Arial", 36))
-        self.btn_canvas.bind("<Button-1>", self.toggle_recording)
+    def build_ui(self) -> None:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=10,
+                      margin_bottom=10, margin_start=10, margin_end=10)
+        self.set_child(box)
 
-        # Stop label
-        self.status_label = tk.Label(self.root, text="Press to start recording", font=("Arial", 12))
-        self.status_label.pack()
+        self.level = Gtk.LevelBar(min_value=0.0, max_value=1.0)
+        box.append(self.level)
 
-        # Timer label
-        self.timer_label = tk.Label(self.root, text="00:00:00", font=("Arial", 10))
-        self.timer_label.pack(pady=(0,10))
+        self.record_btn = Gtk.Button(label="🎤")
+        self.record_btn.set_size_request(120, 120)
+        self.record_btn.connect("clicked", self.toggle_recording)
+        box.append(self.record_btn)
 
-        # Transcript Text area
-        self.text_area = tk.Text(self.root, height=12, width=50, font=("Arial", 12))
-        self.text_area.pack(padx=10, pady=(5,10))
+        self.status_label = Gtk.Label(label="Press to start recording")
+        box.append(self.status_label)
 
-        # Save Button
-        self.save_btn = tk.Button(self.root, text="Save Transcript", command=self.save_transcript)
-        self.save_btn.pack(pady=(0,10))
+        self.timer_label = Gtk.Label(label="00:00:00")
+        box.append(self.timer_label)
 
-    def toggle_recording(self, event=None):
+        self.text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_child(self.text_view)
+        scrolled.set_vexpand(True)
+        box.append(scrolled)
+
+        self.save_btn = Gtk.Button(label="Save Transcript")
+        self.save_btn.connect("clicked", self.save_transcript)
+        box.append(self.save_btn)
+
+    # ------------------------------------------------------------------
+    # Recording control
+    # ------------------------------------------------------------------
+
+    def toggle_recording(self, button: Gtk.Button) -> None:
         if not self.is_recording:
-            self.is_recording = True
-            self.start_time = time.time()
-            self.status_label.config(text="Recording... Press to stop.")
-            self.btn_canvas.itemconfig(self.circle, fill="#44c767", outline="#33a457")
-            self.btn_canvas.itemconfig(self.btn_text, text="⏸")
-            self.timer_thread = threading.Thread(target=self.update_timer)
-            self.timer_thread.daemon = True
-            self.timer_thread.start()
+            self.start_recording()
         else:
-            self.is_recording = False
-            self.status_label.config(text="Press to start recording")
-            self.btn_canvas.itemconfig(self.circle, fill="#fa5457", outline="#e03e41")
-            self.btn_canvas.itemconfig(self.btn_text, text="🎤")
+            self.stop_recording()
 
-    def update_timer(self):
+    def start_recording(self) -> None:
+        self.is_recording = True
+        self.start_time = time.time()
+        self.status_label.set_text("Recording... Press to stop.")
+        self.record_btn.set_label("⏸")
+        self.audio_frames.clear()
+        try:
+            self.stream = sd.InputStream(samplerate=16000, channels=1, callback=self.audio_callback)
+            self.stream.start()
+        except Exception as exc:  # pragma: no cover - runtime error path
+            self.show_error("Recording error", str(exc))
+            self.is_recording = False
+            return
+        self.timer_thread = threading.Thread(target=self.update_timer, daemon=True)
+        self.timer_thread.start()
+
+    def stop_recording(self) -> None:
+        self.is_recording = False
+        self.record_btn.set_label("🎤")
+        if self.stream:
+            try:
+                self.stream.stop()
+                self.stream.close()
+            except Exception as exc:  # pragma: no cover - runtime error path
+                self.show_error("Recording error", str(exc))
+        self.stream = None
+        self.status_label.set_text("Transcribing...")
+        threading.Thread(target=self.transcribe_audio, daemon=True).start()
+
+    def update_timer(self) -> None:
         while self.is_recording:
             self.elapsed_seconds = int(time.time() - self.start_time)
             h = self.elapsed_seconds // 3600
             m = (self.elapsed_seconds % 3600) // 60
             s = self.elapsed_seconds % 60
             timer_str = f"{h:02}:{m:02}:{s:02}"
-            self.timer_label.config(text=timer_str)
+            GLib.idle_add(self.timer_label.set_text, timer_str)
             time.sleep(1)
 
-    def save_transcript(self):
-        text = self.text_area.get("1.0", tk.END).strip()
-        if not text:
-            messagebox.showwarning("No text", "Transcript area is empty.")
-            return
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
-        )
-        if file_path:
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(text)
-            messagebox.showinfo("Saved", f"Transcript saved to:\n{file_path}")
+    # ------------------------------------------------------------------
+    # Audio handling
+    # ------------------------------------------------------------------
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = DictAiTeApp(root)
-    root.mainloop()
+    def audio_callback(self, indata, frames, time_info, status) -> None:
+        if status:
+            print(status)
+        self.audio_frames.append(indata.copy())
+        amplitude = float(np.max(np.abs(indata)))
+        GLib.idle_add(self.level.set_value, amplitude)
+
+    def transcribe_audio(self) -> None:
+        if not self.client:
+            GLib.idle_add(self.show_error, "Configuration", "OpenAI API key not configured")
+            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+            return
+        try:
+            audio = np.concatenate(self.audio_frames, axis=0)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                sf.write(tmp.name, audio, 16000)
+                path = tmp.name
+            with open(path, "rb") as f:
+                response = self.client.audio.transcriptions.create(model="whisper-1", file=f)
+            os.remove(path)
+            transcript = response.text
+            GLib.idle_add(self.display_transcript, transcript)
+        except Exception as exc:  # pragma: no cover - network path
+            GLib.idle_add(self.show_error, "Transcription error", str(exc))
+        finally:
+            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+            GLib.idle_add(self.level.set_value, 0.0)
+            GLib.idle_add(self.timer_label.set_text, "00:00:00")
+
+    def display_transcript(self, text: str) -> None:
+        buffer = self.text_view.get_buffer()
+        buffer.set_text(text)
+
+    # ------------------------------------------------------------------
+    # Saving
+    # ------------------------------------------------------------------
+
+    def save_transcript(self, button: Gtk.Button) -> None:
+        buffer = self.text_view.get_buffer()
+        start, end = buffer.get_bounds()
+        text = buffer.get_text(start, end, True).strip()
+        if not text:
+            self.show_warning("No text", "Transcript area is empty.")
+            return
+        dialog = Gtk.FileChooserNative.new(
+            "Save Transcript",
+            self,
+            Gtk.FileChooserAction.SAVE,
+            "_Save",
+            "_Cancel",
+        )
+        dialog.set_current_name("transcript.txt")
+        dialog.connect("response", self.on_save_response, text)
+        dialog.show()
+
+    def on_save_response(self, dialog: Gtk.FileChooserNative, response: int, text: str) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                path = file.get_path()
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text)
+                    self.show_info("Saved", f"Transcript saved to:\n{path}")
+                except OSError as exc:  # pragma: no cover - file system
+                    self.show_error("Save failed", str(exc))
+        dialog.destroy()
+
+    # ------------------------------------------------------------------
+    # Dialog helpers
+    # ------------------------------------------------------------------
+
+    def show_error(self, title: str, message: str) -> None:
+        self._show_message(title, message, Gtk.MessageType.ERROR)
+
+    def show_warning(self, title: str, message: str) -> None:
+        self._show_message(title, message, Gtk.MessageType.WARNING)
+
+    def show_info(self, title: str, message: str) -> None:
+        self._show_message(title, message, Gtk.MessageType.INFO)
+
+    def _show_message(self, title: str, message: str, mtype: Gtk.MessageType) -> None:
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            modal=True,
+            message_type=mtype,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dialog.format_secondary_text(message)
+        dialog.connect("response", lambda d, r: d.destroy())
+        dialog.show()
+
+
+class DictAiTeApp(Gtk.Application):
+    def __init__(self) -> None:
+        super().__init__(application_id="com.example.dictaite")
+
+    def do_activate(self) -> None:  # pragma: no cover - UI startup
+        win = DictAiTeWindow(self)
+        win.present()
+
+
+def main(argv: list[str] | None = None) -> int:
+    app = DictAiTeApp()
+    return app.run(argv or None)
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry
+    import sys
+
+    raise SystemExit(main(sys.argv))
