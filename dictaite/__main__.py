@@ -43,6 +43,10 @@ LANGUAGES = [
 
 LANGUAGE_NAME = {item["code"]: item["name"] for item in LANGUAGES}
 
+# Get absolute path to the img directory
+BASEDIR = os.path.dirname(os.path.abspath(__file__))
+IMGDIR = os.path.abspath(os.path.join(BASEDIR, '..', 'img'))
+
 
 class DictAiTeWindow(Gtk.ApplicationWindow):
     """Main application window."""
@@ -61,9 +65,13 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.stream: sd.InputStream | None = None
         self.audio_frames: list[np.ndarray] = []
         
-        # Icon paths (ensure the img folder is in your project directory)
-        self.mic_icon_path = os.path.join("img", "microphone.svg")
-        self.stop_icon_path = os.path.join("img", "stop.svg")
+        # Icon paths (use absolute paths for reliability)
+        self.mic_icon_path = os.path.join(IMGDIR, "microphone.png")
+        self.stop_icon_path = os.path.join(IMGDIR, "stop.png")
+
+        # Optionally, print resolved paths for debugging
+        print(f"Mic icon path: {self.mic_icon_path}")
+        print(f"Stop icon path: {self.stop_icon_path}")
 
         self.build_ui()
 

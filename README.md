@@ -4,13 +4,30 @@
 
 The app is designed for simplicity, with a clean UI inspired by modern voice recorders. It’s built using Python and GTK 4 via PyGObject for modern Linux desktop integration.
 
-![Dict-ai-te windows](img/dict-ai-te-window.png)
+<table>
+  <tr>
+    <td align="center">
+      <img src="img/dict-ai-te-ubuntu.png" width="400"/>
+    </td>
+    <td align="center">
+      <img src="img/dict-ai-te-mac.png" width="400"/>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      Ubuntu
+    </td>
+    <td align="center">
+      MacOS
+    </td>
+  </tr>
+</table>
 
 ## Features
 
 * Record audio notes directly from your microphone.
 * See real-time status and elapsed recording time.
-* Live waveform display during recording.
+* Real-time audio level bar during recording.
 * Automatic transcription using the OpenAI Whisper API.
 * Edit or correct transcribed text in the main window.
 * Optional translation to selected language
@@ -60,17 +77,15 @@ sudo apt install -y \
   python3-dev \
   python3-gi \
   python3-gi-cairo \
-  gir1.2-gtk-4.0
-
+  gir1.2-gtk-4.0 \
+  libportaudio2
  ```
 
-And for sound, you need to install:
+On MacOS, you need to install the dependcies using [Homebrew](https://brew.sh/): 
 
 ```sh
- sudo apt install libportaudio2
-
- ```
-
+    brew install gtk4 pygobject3 portaudio
+```
 
 ### 4. Run the Application
 

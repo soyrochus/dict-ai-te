@@ -11,3 +11,7 @@ wheels/
 # configuration files
 
 .env
+
+#OS specific files: MacOS
+.DS_Store
+img/.DS_Store
