@@ -87,14 +87,12 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.level = Gtk.LevelBar(min_value=0.0, max_value=1.0)
         box.append(self.level)
 
-
         self.icon_image = Gtk.Image.new_from_file(self.mic_icon_path)
         self.record_btn = Gtk.Button()
         self.record_btn.set_size_request(120, 120)
         self.record_btn.set_child(self.icon_image)
         self.record_btn.connect("clicked", self.toggle_recording)
         box.append(self.record_btn)
-        
 
         self.status_label = Gtk.Label(label="Press to start recording")
         box.append(self.status_label)
@@ -102,24 +100,41 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.timer_label = Gtk.Label(label="00:00:00")
         box.append(self.timer_label)
 
-        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        # --- New controls layout with labels ---
+        controls_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+
+        # Create controls before using them
         self.language_combo = Gtk.ComboBoxText()
         for item in LANGUAGES:
             self.language_combo.append(item["code"], item["name"])
         self.language_combo.set_active(0)
-        controls.append(self.language_combo)
 
         self.translate_switch = Gtk.Switch()
         self.translate_switch.connect("notify::active", self.on_translate_switch)
-        controls.append(self.translate_switch)
 
         self.target_combo = Gtk.ComboBoxText()
         for item in LANGUAGES[1:]:
             self.target_combo.append(item["code"], item["name"])
         self.target_combo.set_sensitive(False)
-        controls.append(self.target_combo)
 
-        box.append(controls)
+        lang_label = Gtk.Label(label="Origin language")
+        lang_label.set_halign(Gtk.Align.START)
+        controls_box.append(lang_label)
+        controls_box.append(self.language_combo)
+
+        translate_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        translate_label = Gtk.Label(label="Translate to")
+        translate_label.set_halign(Gtk.Align.START)
+        translate_box.append(translate_label)
+        translate_box.append(self.translate_switch)
+        controls_box.append(translate_box)
+
+        dest_label = Gtk.Label(label="Destination language")
+        dest_label.set_halign(Gtk.Align.START)
+        controls_box.append(dest_label)
+        controls_box.append(self.target_combo)
+
+        box.append(controls_box)
 
         self.text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
         scrolled = Gtk.ScrolledWindow()
@@ -175,7 +190,10 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 
     def update_timer(self) -> None:
         while self.is_recording:
-            self.elapsed_seconds = int(time.time() - self.start_time)
+            if self.start_time is not None:
+                self.elapsed_seconds = int(time.time() - self.start_time)
+            else:
+                self.elapsed_seconds = 0
             h = self.elapsed_seconds // 3600
             m = (self.elapsed_seconds % 3600) // 60
             s = self.elapsed_seconds % 60
@@ -231,7 +249,11 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
                             messages=[{"role": "user", "content": prompt}],
                             temperature=0.2,
                         )
-                        transcript = comp.choices[0].message.content.strip()
+                        content = comp.choices[0].message.content
+                        if content is not None:
+                            transcript = content.strip()
+                        else:
+                            transcript = ""
                     except Exception as exc:  # pragma: no cover - network path
                         GLib.idle_add(
                             self.show_error,

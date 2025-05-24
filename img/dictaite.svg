@@ -1,0 +1,21 @@
+<svg viewBox="0 0 80 64" width="80" height="64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Microphone capsule -->
+  <rect x="20" y="10" width="24" height="36" rx="12" fill="#25a244" stroke="#222" stroke-width="3"/>
+  <!-- Grill lines -->
+  <rect x="24" y="16" width="16" height="2" rx="1" fill="#fff" opacity="0.7"/>
+  <rect x="24" y="22" width="16" height="2" rx="1" fill="#fff" opacity="0.7"/>
+  <rect x="24" y="28" width="16" height="2" rx="1" fill="#fff" opacity="0.7"/>
+  <rect x="24" y="34" width="16" height="2" rx="1" fill="#fff" opacity="0.7"/>
+  <!-- Stem (lighter) -->
+  <rect x="30" y="46" width="4" height="8" rx="2" fill="#a3a3a3"/>
+  <!-- Base (lighter) -->
+  <rect x="24" y="56" width="16" height="4" rx="2" fill="#a3a3a3"/>
+  <!-- Left side arm -->
+  <rect x="15" y="40" width="6" height="3" rx="1.5" fill="#222" transform="rotate(-25 15 40)"/>
+  <!-- Right side arm -->
+  <rect x="43" y="40" width="6" height="3" rx="1.5" fill="#222" transform="rotate(25 43 40)"/>
+  <!-- Audio waveform (right of mic) -->
+  <path d="M52 24 Q58 32 52 40" stroke="#25a244" stroke-width="2" fill="none"/>
+  <path d="M56 22 Q64 32 56 42" stroke="#25a244" stroke-width="1.5" fill="none"/>
+  <path d="M60 20 Q70 32 60 44" stroke="#25a244" stroke-width="1" fill="none"/>
+</svg>
