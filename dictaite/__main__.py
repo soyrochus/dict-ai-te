@@ -17,13 +17,39 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import Gtk, GLib
 
+LANGUAGES = [
+    {"code": "default", "name": "Default (Auto-detect)"},
+    {"code": "en", "name": "English"},
+    {"code": "zh", "name": "中文 (Chinese, Mandarin)"},
+    {"code": "es", "name": "Español (Spanish)"},
+    {"code": "de", "name": "Deutsch (German)"},
+    {"code": "fr", "name": "Français (French)"},
+    {"code": "ja", "name": "日本語 (Japanese)"},
+    {"code": "pt", "name": "Português (Portuguese)"},
+    {"code": "ru", "name": "Русский (Russian)"},
+    {"code": "ar", "name": "العربية (Arabic)"},
+    {"code": "it", "name": "Italiano (Italian)"},
+    {"code": "ko", "name": "한국어 (Korean)"},
+    {"code": "hi", "name": "हिन्दी (Hindi)"},
+    {"code": "nl", "name": "Nederlands (Dutch)"},
+    {"code": "tr", "name": "Türkçe (Turkish)"},
+    {"code": "pl", "name": "Polski (Polish)"},
+    {"code": "id", "name": "Bahasa Indonesia (Indonesian)"},
+    {"code": "th", "name": "ภาษาไทย (Thai)"},
+    {"code": "sv", "name": "Svenska (Swedish)"},
+    {"code": "he", "name": "עברית (Hebrew)"},
+    {"code": "cs", "name": "Čeština (Czech)"},
+]
+
+LANGUAGE_NAME = {item["code"]: item["name"] for item in LANGUAGES}
+
 
 class DictAiTeWindow(Gtk.ApplicationWindow):
     """Main application window."""
 
     def __init__(self, app: Gtk.Application) -> None:
         super().__init__(application=app, title="dict-ai-te")
-        self.set_default_size(400, 500)
+        self.set_default_size(400, 600)
         load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY")
         self.client = OpenAI(api_key=api_key) if api_key else None
@@ -67,6 +93,25 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 
         self.timer_label = Gtk.Label(label="00:00:00")
         box.append(self.timer_label)
+
+        controls = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.language_combo = Gtk.ComboBoxText()
+        for item in LANGUAGES:
+            self.language_combo.append(item["code"], item["name"])
+        self.language_combo.set_active(0)
+        controls.append(self.language_combo)
+
+        self.translate_switch = Gtk.Switch()
+        self.translate_switch.connect("notify::active", self.on_translate_switch)
+        controls.append(self.translate_switch)
+
+        self.target_combo = Gtk.ComboBoxText()
+        for item in LANGUAGES[1:]:
+            self.target_combo.append(item["code"], item["name"])
+        self.target_combo.set_sensitive(False)
+        controls.append(self.target_combo)
+
+        box.append(controls)
 
         self.text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
         scrolled = Gtk.ScrolledWindow()
@@ -130,6 +175,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self.timer_label.set_text, timer_str)
             time.sleep(1)
 
+    def on_translate_switch(self, switch: Gtk.Switch, _param: object) -> None:
+        self.target_combo.set_sensitive(switch.get_active())
+
     # ------------------------------------------------------------------
     # Audio handling
     # ------------------------------------------------------------------
@@ -152,9 +200,37 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
                 sf.write(tmp.name, audio, 16000)
                 path = tmp.name
             with open(path, "rb") as f:
-                response = self.client.audio.transcriptions.create(model="whisper-1", file=f)
+                kwargs = {"model": "whisper-1", "file": f}
+                lang_code = self.language_combo.get_active_id()
+                if lang_code and lang_code != "default":
+                    kwargs["language"] = lang_code
+                response = self.client.audio.transcriptions.create(**kwargs)
             os.remove(path)
             transcript = response.text
+
+            if self.translate_switch.get_active():
+                target_code = self.target_combo.get_active_id()
+                if target_code:
+                    src_name = LANGUAGE_NAME.get(lang_code, "the source language")
+                    tgt_name = LANGUAGE_NAME.get(target_code, target_code)
+                    prompt = (
+                        f"Translate the following text from {src_name} to {tgt_name}."
+                        "\nReturn only the translated text.\n\n" + transcript
+                    )
+                    try:
+                        comp = self.client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.2,
+                        )
+                        transcript = comp.choices[0].message.content.strip()
+                    except Exception as exc:  # pragma: no cover - network path
+                        GLib.idle_add(
+                            self.show_error,
+                            "Translation error",
+                            str(exc),
+                        )
+
             GLib.idle_add(self.display_transcript, transcript)
         except Exception as exc:  # pragma: no cover - network path
             GLib.idle_add(self.show_error, "Transcription error", str(exc))
