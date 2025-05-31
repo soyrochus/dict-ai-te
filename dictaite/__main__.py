@@ -11,8 +11,7 @@ import time
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-from dotenv import load_dotenv
-from openai import OpenAI
+from .api import get_openai_client, transcribe_file, translate_text
 
 import gi
 gi.require_version("Gtk", "4.0")
@@ -56,9 +55,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     def __init__(self, app: Gtk.Application) -> None:
         super().__init__(application=app, title="dict-ai-te")
         self.set_default_size(400, 600)
-        load_dotenv()
-        api_key = os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=api_key) if api_key else None
+        self.client = get_openai_client()
 
         self.is_recording = False
         self.start_time: float | None = None
@@ -241,49 +238,20 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 sf.write(tmp.name, audio, 16000)
                 path = tmp.name
+            lang_code = self.language_combo.get_active_id()
             with open(path, "rb") as f:
-                kwargs = {
-                    "model": "whisper-1",
-                    "file": f,
-                    "prompt": (
-                        "Transcribe the audio and return well-structured paragraphs. "
-                        "Use blank lines to separate paragraphs and fix simple punctuation errors."
-                    ),
-                }
-                lang_code = self.language_combo.get_active_id()
-                if lang_code and lang_code != "default":
-                    kwargs["language"] = lang_code
-                response = self.client.audio.transcriptions.create(**kwargs)
+                transcript = transcribe_file(f, lang_code)
             os.remove(path)
-            transcript = response.text
 
             if self.translate_switch.get_active():
                 target_code = self.target_combo.get_active_id()
                 if target_code:
                     src_name = LANGUAGE_NAME.get(lang_code, "the source language")
                     tgt_name = LANGUAGE_NAME.get(target_code, target_code)
-                    prompt = (
-                        f"Translate the following text from {src_name} to {tgt_name}. "
-                        "Format the translation into clear paragraphs separated by blank lines. "
-                        "Return only the translated text.\n\n" + transcript
-                    )
                     try:
-                        comp = self.client.chat.completions.create(
-                            model="gpt-3.5-turbo",
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.2,
-                        )
-                        content = comp.choices[0].message.content
-                        if content is not None:
-                            transcript = content.strip()
-                        else:
-                            transcript = ""
+                        transcript = translate_text(transcript, src_name, tgt_name)
                     except Exception as exc:  # pragma: no cover - network path
-                        GLib.idle_add(
-                            self.show_error,
-                            "Translation error",
-                            str(exc),
-                        )
+                        GLib.idle_add(self.show_error, "Translation error", str(exc))
 
             GLib.idle_add(self.display_transcript, transcript)
         except Exception as exc:  # pragma: no cover - network path
