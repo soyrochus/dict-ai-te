@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# part of dictaite: Bash runner for the dictaite program using uv and virtualenv | Copyright (c) 2025 | License: MIT
+# Script to run the dictaite module from the virtual environment sandbox using uv
+
+# Get the directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR/.."
+
+# Activate the virtual environment if needed
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
+fi
+
+# Change to the project root directory
+cd "$PROJECT_ROOT"
+
+# Run the dictaite module with uv
+uv run -m dictaite "$@"

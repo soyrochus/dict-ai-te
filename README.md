@@ -93,6 +93,14 @@ On MacOS, you need to install the dependcies using [Homebrew](https://brew.sh/):
 python -m dictaite
 ```
 
+or use the script in the bin directory
+
+```bash
+<source dir>>bin/dictaite
+```
+
+Note that the script needs to have the executable permision set. 
+
 ## Configuration
 
 1. Create a `.env` file in the project root containing your OpenAI API key:
