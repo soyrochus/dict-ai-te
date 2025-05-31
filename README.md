@@ -32,6 +32,7 @@ The app is designed for simplicity, with a clean UI inspired by modern voice rec
 * Edit or correct transcribed text in the main window.
 * Optional translation to selected language
 * Save transcripts as plain text files.
+* Copy transcripts to your clipboard with a single click.
 * Simple configuration using `.env` or environment variables for the OpenAI API key.
 
 ## Installation
