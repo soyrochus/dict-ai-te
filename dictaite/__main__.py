@@ -16,7 +16,8 @@ from openai import OpenAI
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib
+gi.require_version("Gdk", "4.0")
+from gi.repository import Gtk, GLib, Gdk
 
 LANGUAGES = [
     {"code": "default", "name": "Default (Auto-detect)"},
@@ -143,9 +144,23 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         scrolled.set_vexpand(True)
         box.append(scrolled)
 
-        self.save_btn = Gtk.Button(label="Save Transcript")
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        save_img = Gtk.Image.new_from_icon_name("document-save-symbolic")
+        self.save_btn = Gtk.Button()
+        self.save_btn.set_child(save_img)
+        self.save_btn.set_tooltip_text("Save Transcript")
         self.save_btn.connect("clicked", self.save_transcript)
-        box.append(self.save_btn)
+        actions.append(self.save_btn)
+
+        copy_img = Gtk.Image.new_from_icon_name("edit-copy-symbolic")
+        self.copy_btn = Gtk.Button()
+        self.copy_btn.set_child(copy_img)
+        self.copy_btn.set_tooltip_text("Copy Transcript")
+        self.copy_btn.connect("clicked", self.copy_transcript)
+        actions.append(self.copy_btn)
+
+        box.append(actions)
 
     # ------------------------------------------------------------------
     # Recording control
@@ -227,7 +242,14 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
                 sf.write(tmp.name, audio, 16000)
                 path = tmp.name
             with open(path, "rb") as f:
-                kwargs = {"model": "whisper-1", "file": f}
+                kwargs = {
+                    "model": "whisper-1",
+                    "file": f,
+                    "prompt": (
+                        "Transcribe the audio and return well-structured paragraphs. "
+                        "Use blank lines to separate paragraphs and fix simple punctuation errors."
+                    ),
+                }
                 lang_code = self.language_combo.get_active_id()
                 if lang_code and lang_code != "default":
                     kwargs["language"] = lang_code
@@ -241,8 +263,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
                     src_name = LANGUAGE_NAME.get(lang_code, "the source language")
                     tgt_name = LANGUAGE_NAME.get(target_code, target_code)
                     prompt = (
-                        f"Translate the following text from {src_name} to {tgt_name}."
-                        "\nReturn only the translated text.\n\n" + transcript
+                        f"Translate the following text from {src_name} to {tgt_name}. "
+                        "Format the translation into clear paragraphs separated by blank lines. "
+                        "Return only the translated text.\n\n" + transcript
                     )
                     try:
                         comp = self.client.chat.completions.create(
@@ -300,6 +323,19 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             pass
         dialog.connect("response", self.on_save_response, text)
         dialog.show()
+
+    def copy_transcript(self, button: Gtk.Button) -> None:
+        buffer = self.text_view.get_buffer()
+        start, end = buffer.get_bounds()
+        text = buffer.get_text(start, end, True)
+        display = self.get_display()
+        if not display:
+            return
+        clipboard = display.get_clipboard()
+        provider = Gdk.ContentProvider.new_for_bytes(
+            "text/plain;charset=utf-8", GLib.Bytes.new(text.encode("utf-8"))
+        )
+        clipboard.set_content(provider)
 
     def on_save_response(self, dialog: Gtk.FileChooserDialog, response: int, text: str) -> None:
         if response == Gtk.ResponseType.ACCEPT:
