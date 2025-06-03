@@ -346,6 +346,19 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         dialog.connect("response", self.on_save_response, text)
         dialog.show()
 
+    def on_save_response(self, dialog: Gtk.FileChooserDialog, response: int, text: str) -> None:
+        if response == Gtk.ResponseType.ACCEPT:
+            file = dialog.get_file()
+            if file:
+                path = file.get_path()
+                try:
+                    with open(path, "w", encoding="utf-8") as f:
+                        f.write(text)
+                    self.show_info("Saved", f"Transcript saved to:\n{path}")
+                except OSError as exc:
+                    self.show_error("Save failed", str(exc))
+        dialog.close()
+
     def copy_transcript(self, button: Gtk.Button) -> None:
         buffer = self.text_view.get_buffer()
         start, end = buffer.get_bounds()
