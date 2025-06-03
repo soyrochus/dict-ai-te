@@ -11,6 +11,7 @@ import time
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
+import io
 from .api import get_openai_client, transcribe_file, translate_text
 
 import gi
@@ -157,6 +158,14 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.copy_btn.connect("clicked", self.copy_transcript)
         actions.append(self.copy_btn)
 
+        play_img = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
+        self.play_btn = Gtk.Button()
+        self.play_btn.set_child(play_img)
+        self.play_btn.set_tooltip_text("Play Transcript")
+        self.play_btn.connect("clicked", self.play_transcript)
+        actions.append(self.play_btn)
+
+
         box.append(actions)
 
     # ------------------------------------------------------------------
@@ -265,6 +274,51 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         buffer = self.text_view.get_buffer()
         buffer.set_text(text)
 
+    def play_transcript(self, button: Gtk.Button) -> None:
+        buffer = self.text_view.get_buffer()
+        start, end = buffer.get_bounds()
+        text = buffer.get_text(start, end, True).strip()
+        if not text:
+            self.show_warning("No text", "Transcript area is empty.")
+            return
+        self.status_label.set_text("Generating audio...")
+        threading.Thread(target=self._generate_and_play, args=(text,), daemon=True).start()
+
+    def _generate_and_play(self, text: str) -> None:
+        if not self.client:
+            GLib.idle_add(self.show_error, "Configuration", "OpenAI API key not configured")
+            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+            return
+        try:
+            resp = self.client.audio.speech.create(
+                input=text,
+                model="tts-1",
+                voice="alloy",
+                response_format="wav"
+            )
+            audio_data = None
+            if isinstance(resp, (bytes, bytearray)):
+                audio_data = resp
+            elif hasattr(resp, "read"):
+                audio_data = resp.read()
+            elif hasattr(resp, "content"):
+                audio_data = resp.content
+            elif hasattr(resp, "iter_bytes"):
+                # For httpx streaming responses
+                audio_data = b"".join(resp.iter_bytes())
+            else:
+                raise TypeError(f"Unknown response type: {type(resp)}")
+            bio = io.BytesIO(audio_data)
+            data, sr = sf.read(bio, dtype="float32")
+            print(f"Playing audio of length {len(data)} at {sr} Hz")
+            sd.play(data, sr)
+            sd.wait()
+        except Exception as exc:
+            print(f"Audio error: {exc}")  # Print error for debugging
+            GLib.idle_add(self.show_error, "Audio error", str(exc))
+        finally:
+            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+
     # ------------------------------------------------------------------
     # Saving
     # ------------------------------------------------------------------
@@ -304,19 +358,6 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             "text/plain;charset=utf-8", GLib.Bytes.new(text.encode("utf-8"))
         )
         clipboard.set_content(provider)
-
-    def on_save_response(self, dialog: Gtk.FileChooserDialog, response: int, text: str) -> None:
-        if response == Gtk.ResponseType.ACCEPT:
-            file = dialog.get_file()
-            if file:
-                path = file.get_path()
-                try:
-                    with open(path, "w", encoding="utf-8") as f:
-                        f.write(text)
-                    self.show_info("Saved", f"Transcript saved to:\n{path}")
-                except OSError as exc:
-                    self.show_error("Save failed", str(exc))
-        dialog.close()
 
     # ------------------------------------------------------------------
     # Dialog helpers
