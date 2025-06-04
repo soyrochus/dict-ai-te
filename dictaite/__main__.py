@@ -59,6 +59,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.client = get_openai_client()
 
         self.is_recording = False
+        self.is_playing = False
         self.start_time: float | None = None
         self.elapsed_seconds = 0
         self.timer_thread: threading.Thread | None = None
@@ -115,6 +116,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.target_combo = Gtk.ComboBoxText()
         for item in LANGUAGES[1:]:
             self.target_combo.append(item["code"], item["name"])
+        self.target_combo.set_active(0)
         self.target_combo.set_sensitive(False)
 
         lang_label = Gtk.Label(label="Origin language")
@@ -164,6 +166,15 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.play_btn.set_tooltip_text("Play Transcript")
         self.play_btn.connect("clicked", self.play_transcript)
         actions.append(self.play_btn)
+
+        voice_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
+        self.female_btn = Gtk.CheckButton.new_with_label("Female")
+        self.male_btn = Gtk.CheckButton.new_with_label("Male")
+        self.male_btn.set_group(self.female_btn)
+        self.female_btn.set_active(True)
+        voice_box.append(self.female_btn)
+        voice_box.append(self.male_btn)
+        actions.append(voice_box)
 
 
         box.append(actions)
@@ -290,10 +301,11 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self.status_label.set_text, "Press to start recording")
             return
         try:
+            voice = "nova" if self.female_btn.get_active() else "onyx"
             resp = self.client.audio.speech.create(
                 input=text,
                 model="tts-1",
-                voice="alloy",
+                voice=voice,
                 response_format="wav"
             )
             audio_data = None
@@ -311,13 +323,54 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             bio = io.BytesIO(audio_data)
             data, sr = sf.read(bio, dtype="float32")
             print(f"Playing audio of length {len(data)} at {sr} Hz")
-            sd.play(data, sr)
-            sd.wait()
+            self.play_audio_with_feedback(data, sr)
         except Exception as exc:
             print(f"Audio error: {exc}")  # Print error for debugging
             GLib.idle_add(self.show_error, "Audio error", str(exc))
         finally:
             GLib.idle_add(self.status_label.set_text, "Press to start recording")
+
+    def play_audio_with_feedback(self, data: np.ndarray, sr: int) -> None:
+        """Play audio while updating level and timer."""
+        # Ensure data has a channel dimension so the callback always receives
+        # 2-D chunks matching the output stream's expectations.
+        if data.ndim == 1:
+            data = data.reshape(-1, 1)
+
+        self.is_playing = True
+        start = time.time()
+        idx = 0
+
+        def callback(outdata, frames, time_info, status) -> None:
+            nonlocal idx
+            if status:
+                print(status)
+            end = idx + frames
+            chunk = data[idx:end]
+            if len(chunk) < frames:
+                outdata[:len(chunk)] = chunk
+                outdata[len(chunk):] = 0
+                amplitude = float(np.max(np.abs(chunk))) if len(chunk) else 0.0
+                GLib.idle_add(self.level.set_value, amplitude)
+                raise sd.CallbackStop()
+            outdata[:] = chunk
+            amplitude = float(np.max(np.abs(chunk)))
+            GLib.idle_add(self.level.set_value, amplitude)
+            idx = end
+
+        stream = sd.OutputStream(samplerate=sr, channels=data.shape[1] if data.ndim > 1 else 1, callback=callback)
+        stream.start()
+        while stream.active:
+            elapsed = int(time.time() - start)
+            h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
+            timer_str = f"{h:02}:{m:02}:{s:02}"
+            GLib.idle_add(self.timer_label.set_text, timer_str)
+            time.sleep(0.1)
+        stream.stop()
+        stream.close()
+        self.is_playing = False
+        GLib.idle_add(self.level.set_value, 0.0)
+        GLib.idle_add(self.timer_label.set_text, "00:00:00")
 
     # ------------------------------------------------------------------
     # Saving
