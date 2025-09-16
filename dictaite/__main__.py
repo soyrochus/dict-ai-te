@@ -139,6 +139,8 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.language_combo.set_active(0)
 
         self.translate_switch = Gtk.Switch()
+        self.translate_switch.set_halign(Gtk.Align.START)
+        self.translate_switch.set_hexpand(False)
         self.translate_switch.connect("notify::active", self.on_translate_switch)
 
         self.target_combo = Gtk.ComboBoxText()
@@ -574,6 +576,8 @@ class SettingsDialog(Gtk.Dialog):
 
         self.translate_switch = Gtk.Switch()
         self.translate_switch.set_active(config.translation_enabled)
+        self.translate_switch.set_halign(Gtk.Align.START)
+        self.translate_switch.set_hexpand(False)
         self.translate_switch.connect("notify::active", self._on_translate_toggle)
         grid.attach(self.translate_switch, 1, 1, 1, 1)
 
