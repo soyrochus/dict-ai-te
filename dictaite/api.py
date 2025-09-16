@@ -85,3 +85,30 @@ def format_structured_text(text: str) -> str:
         if normalized:
             paragraphs.append(normalized)
     return "\n\n".join(paragraphs)
+
+
+def synthesize_speech_wav(text: str, voice: str) -> bytes:
+    """Generate speech from text using OpenAI TTS and return WAV bytes."""
+    client = get_openai_client()
+    if not client:
+        raise RuntimeError("OpenAI API key not configured")
+
+    response = client.audio.speech.create(
+        input=text,
+        model="tts-1",
+        voice=voice,
+        response_format="wav"
+    )
+    
+    # Handle different response types
+    if isinstance(response, (bytes, bytearray)):
+        return bytes(response)
+    elif hasattr(response, "read"):
+        return response.read()
+    elif hasattr(response, "content"):
+        return response.content
+    elif hasattr(response, "iter_bytes"):
+        # For httpx streaming responses
+        return b"".join(response.iter_bytes())
+    else:
+        raise TypeError(f"Unknown response type: {type(response)}")
