@@ -2,18 +2,19 @@
 """OpenAI API client and convenience functions for transcription and translation."""
 
 import os
+import re
 from typing import BinaryIO
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
 # Default model and prompt settings
-WHISPER_MODEL = "whisper-1"
-WHISPER_PROMPT = (
+TRANSCRIBE_MODEL = "gpt-4o-transcribe"
+TRANSCRIBE_PROMPT = (
     "Transcribe the audio and return well-structured paragraphs. "
     "Use blank lines to separate paragraphs and fix simple punctuation errors."
 )
-CHAT_MODEL = "gpt-3.5-turbo"
+TRANSLATE_MODEL = "gpt-5-mini-2025-08-07"
 CHAT_TEMPERATURE = 0.2
 CHAT_PROMPT_TEMPLATE = (
     "Translate the following text from {src_name} to {tgt_name}. "
@@ -32,21 +33,21 @@ def get_openai_client() -> OpenAI | None:
 
 
 def transcribe_file(file: BinaryIO, language: str | None = None) -> str:
-    """Transcribe audio file using the OpenAI Whisper API."""
+    """Transcribe audio file using the OpenAI transcription API."""
     client = get_openai_client()
     if not client:
         raise RuntimeError("OpenAI API key not configured")
 
     kwargs: dict[str, object] = {
-        "model": WHISPER_MODEL,
+        "model": TRANSCRIBE_MODEL,
         "file": file,
-        "prompt": WHISPER_PROMPT,
+        "prompt": TRANSCRIBE_PROMPT,
     }
     if language and language != "default":
         kwargs["language"] = language
 
     response = client.audio.transcriptions.create(**kwargs)
-    return response.text
+    return format_structured_text(response.text)
 
 
 def translate_text(text: str, src_name: str, tgt_name: str) -> str:
@@ -57,9 +58,30 @@ def translate_text(text: str, src_name: str, tgt_name: str) -> str:
 
     prompt = CHAT_PROMPT_TEMPLATE.format(src_name=src_name, tgt_name=tgt_name, text=text)
     comp = client.chat.completions.create(
-        model=CHAT_MODEL,
+        model=TRANSLATE_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=CHAT_TEMPERATURE,
     )
     content = comp.choices[0].message.content
-    return content.strip() if content else ""
+    return format_structured_text(content or "")
+
+
+_PARA_SPLIT = re.compile(r"\n\s*\n")
+_SPACE_COLLAPSE = re.compile(r"\s+")
+
+
+def format_structured_text(text: str) -> str:
+    """Normalise whitespace and paragraph spacing for readability."""
+    stripped = text.strip()
+    if not stripped:
+        return ""
+    paragraphs: list[str] = []
+    for block in _PARA_SPLIT.split(stripped):
+        block = block.strip()
+        if not block:
+            continue
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        normalized = " ".join(_SPACE_COLLAPSE.sub(" ", line) for line in lines)
+        if normalized:
+            paragraphs.append(normalized)
+    return "\n\n".join(paragraphs)
