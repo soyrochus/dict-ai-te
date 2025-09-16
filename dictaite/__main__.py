@@ -127,9 +127,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         for item in LANGUAGES:
             self.language_combo.append(item["code"], item["name"])
         
-        # Set default to English (index 1, since index 0 is "Default (Auto-detect)")
+        # Set default to English (first practical language option)
         default_source = self.config.get("languages", {}).get("default_source", "en")
-        default_index = 1  # Default to English
+        default_index = 1  # Default to English (index 1, since index 0 is auto-detect)
         for i, item in enumerate(LANGUAGES):
             if item["code"] == default_source:
                 default_index = i
