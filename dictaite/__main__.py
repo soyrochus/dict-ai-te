@@ -13,11 +13,12 @@ import sounddevice as sd
 import soundfile as sf
 import io
 from .api import get_openai_client, transcribe_file, translate_text
+from .config import load_config, save_config, AVAILABLE_VOICES
 
 import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Gtk, GLib, Gdk
+from gi.repository import Gtk, GLib, Gdk, Gio
 
 LANGUAGES = [
     {"code": "default", "name": "Default (Auto-detect)"},
@@ -57,6 +58,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         super().__init__(application=app, title="dict-ai-te")
         self.set_default_size(400, 600)
         self.client = get_openai_client()
+        
+        # Load configuration
+        self.config = load_config()
 
         self.is_recording = False
         self.is_playing = False
@@ -81,6 +85,20 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     # ------------------------------------------------------------------
 
     def build_ui(self) -> None:
+        # Create a header bar with menu button
+        header_bar = Gtk.HeaderBar()
+        self.set_titlebar(header_bar)
+        
+        # Add settings menu button
+        menu_button = Gtk.MenuButton()
+        menu_button.set_icon_name("open-menu-symbolic")
+        header_bar.pack_end(menu_button)
+        
+        # Create menu model
+        menu_model = Gio.Menu()
+        menu_model.append("Settings", "app.settings")
+        menu_button.set_menu_model(menu_model)
+
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=10,
                       margin_bottom=10, margin_start=10, margin_end=10)
         self.set_child(box)
@@ -108,7 +126,15 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.language_combo = Gtk.ComboBoxText()
         for item in LANGUAGES:
             self.language_combo.append(item["code"], item["name"])
-        self.language_combo.set_active(0)
+        
+        # Set default to English (index 1, since index 0 is "Default (Auto-detect)")
+        default_source = self.config.get("languages", {}).get("default_source", "en")
+        default_index = 1  # Default to English
+        for i, item in enumerate(LANGUAGES):
+            if item["code"] == default_source:
+                default_index = i
+                break
+        self.language_combo.set_active(default_index)
 
         self.translate_switch = Gtk.Switch()
         self.translate_switch.connect("notify::active", self.on_translate_switch)
@@ -116,7 +142,15 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.target_combo = Gtk.ComboBoxText()
         for item in LANGUAGES[1:]:
             self.target_combo.append(item["code"], item["name"])
-        self.target_combo.set_active(0)
+        
+        # Set default target language
+        default_target = self.config.get("languages", {}).get("default_target", "es")
+        target_index = 0  # Default to first option
+        for i, item in enumerate(LANGUAGES[1:]):
+            if item["code"] == default_target:
+                target_index = i
+                break
+        self.target_combo.set_active(target_index)
         self.target_combo.set_sensitive(False)
 
         lang_label = Gtk.Label(label="Origin language")
@@ -167,13 +201,28 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.play_btn.connect("clicked", self.play_transcript)
         actions.append(self.play_btn)
 
-        voice_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
+        voice_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        voice_label = Gtk.Label(label="Voice:")
+        voice_label.set_halign(Gtk.Align.START)
+        voice_box.append(voice_label)
+        
+        # Create horizontal radio buttons for Female/Male
+        voice_radio_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
         self.female_btn = Gtk.CheckButton.new_with_label("Female")
         self.male_btn = Gtk.CheckButton.new_with_label("Male")
         self.male_btn.set_group(self.female_btn)
+        
+        # Set default based on config or default to Female
+        default_voice_type = "female"  # Default fallback
+        female_voice = self.config.get("voices", {}).get("female", "nova")
+        male_voice = self.config.get("voices", {}).get("male", "onyx")
+        
+        # Default to female voice
         self.female_btn.set_active(True)
-        voice_box.append(self.female_btn)
-        voice_box.append(self.male_btn)
+        
+        voice_radio_box.append(self.female_btn)
+        voice_radio_box.append(self.male_btn)
+        voice_box.append(voice_radio_box)
         actions.append(voice_box)
 
 
@@ -301,7 +350,12 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             GLib.idle_add(self.status_label.set_text, "Press to start recording")
             return
         try:
-            voice = "nova" if self.female_btn.get_active() else "onyx"
+            # Use configured voice based on selected gender
+            if self.female_btn.get_active():
+                voice = self.config.get("voices", {}).get("female", "nova")
+            else:
+                voice = self.config.get("voices", {}).get("male", "onyx")
+            
             resp = self.client.audio.speech.create(
                 input=text,
                 model="tts-1",
@@ -426,6 +480,226 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         clipboard.set_content(provider)
 
     # ------------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------------
+
+    def show_settings_dialog(self, action, param):
+        """Show the settings dialog."""
+        dialog = Gtk.Dialog(
+            title="Settings",
+            transient_for=self,
+            modal=True,
+            use_header_bar=True
+        )
+        dialog.add_buttons(
+            "_Cancel", Gtk.ResponseType.CANCEL,
+            "_Save", Gtk.ResponseType.ACCEPT
+        )
+        dialog.set_default_size(400, 300)
+
+        content_area = dialog.get_content_area()
+        content_area.set_spacing(12)
+        content_area.set_margin_top(12)
+        content_area.set_margin_bottom(12)
+        content_area.set_margin_start(12)
+        content_area.set_margin_end(12)
+
+        # Voice settings section
+        voice_frame = Gtk.Frame(label="Voice Settings")
+        voice_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        voice_box.set_margin_top(6)
+        voice_box.set_margin_bottom(6)
+        voice_box.set_margin_start(6)
+        voice_box.set_margin_end(6)
+        voice_frame.set_child(voice_box)
+
+        # Female voice selection
+        female_label = Gtk.Label(label="Female Voice:")
+        female_label.set_halign(Gtk.Align.START)
+        voice_box.append(female_label)
+        
+        female_voice_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.female_voice_combo = Gtk.ComboBoxText()
+        for voice in AVAILABLE_VOICES["female"]:
+            self.female_voice_combo.append(voice, voice.title())
+        
+        # Set current value
+        current_female = self.config.get("voices", {}).get("female", "nova")
+        for i, voice in enumerate(AVAILABLE_VOICES["female"]):
+            if voice == current_female:
+                self.female_voice_combo.set_active(i)
+                break
+        
+        female_play_btn = Gtk.Button(label="▶ Test")
+        female_play_btn.connect("clicked", self.test_female_voice)
+        
+        female_voice_box.append(self.female_voice_combo)
+        female_voice_box.append(female_play_btn)
+        voice_box.append(female_voice_box)
+
+        # Male voice selection
+        male_label = Gtk.Label(label="Male Voice:")
+        male_label.set_halign(Gtk.Align.START)
+        voice_box.append(male_label)
+        
+        male_voice_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.male_voice_combo = Gtk.ComboBoxText()
+        for voice in AVAILABLE_VOICES["male"]:
+            self.male_voice_combo.append(voice, voice.title())
+        
+        # Set current value
+        current_male = self.config.get("voices", {}).get("male", "onyx")
+        for i, voice in enumerate(AVAILABLE_VOICES["male"]):
+            if voice == current_male:
+                self.male_voice_combo.set_active(i)
+                break
+        
+        male_play_btn = Gtk.Button(label="▶ Test")
+        male_play_btn.connect("clicked", self.test_male_voice)
+        
+        male_voice_box.append(self.male_voice_combo)
+        male_voice_box.append(male_play_btn)
+        voice_box.append(male_voice_box)
+
+        content_area.append(voice_frame)
+
+        # Language settings section
+        lang_frame = Gtk.Frame(label="Default Languages")
+        lang_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        lang_box.set_margin_top(6)
+        lang_box.set_margin_bottom(6)
+        lang_box.set_margin_start(6)
+        lang_box.set_margin_end(6)
+        lang_frame.set_child(lang_box)
+
+        # Default source language
+        source_label = Gtk.Label(label="Default Source Language:")
+        source_label.set_halign(Gtk.Align.START)
+        lang_box.append(source_label)
+        
+        self.source_lang_combo = Gtk.ComboBoxText()
+        for item in LANGUAGES:
+            self.source_lang_combo.append(item["code"], item["name"])
+        
+        # Set current value
+        current_source = self.config.get("languages", {}).get("default_source", "en")
+        for i, item in enumerate(LANGUAGES):
+            if item["code"] == current_source:
+                self.source_lang_combo.set_active(i)
+                break
+        lang_box.append(self.source_lang_combo)
+
+        # Default target language
+        target_label = Gtk.Label(label="Default Target Language:")
+        target_label.set_halign(Gtk.Align.START)
+        lang_box.append(target_label)
+        
+        self.target_lang_combo = Gtk.ComboBoxText()
+        for item in LANGUAGES[1:]:  # Exclude "Default (Auto-detect)"
+            self.target_lang_combo.append(item["code"], item["name"])
+        
+        # Set current value
+        current_target = self.config.get("languages", {}).get("default_target", "es")
+        for i, item in enumerate(LANGUAGES[1:]):
+            if item["code"] == current_target:
+                self.target_lang_combo.set_active(i)
+                break
+        lang_box.append(self.target_lang_combo)
+
+        content_area.append(lang_frame)
+
+        dialog.connect("response", self.on_settings_response)
+        dialog.show()
+
+    def test_female_voice(self, button):
+        """Test the selected female voice."""
+        voice = self.female_voice_combo.get_active_id()
+        if voice:
+            self._test_voice(voice, "This is a test of the female voice.")
+
+    def test_male_voice(self, button):
+        """Test the selected male voice."""
+        voice = self.male_voice_combo.get_active_id()
+        if voice:
+            self._test_voice(voice, "This is a test of the male voice.")
+
+    def _test_voice(self, voice: str, text: str):
+        """Play a test audio with the given voice."""
+        if not self.client:
+            self.show_error("Configuration", "OpenAI API key not configured")
+            return
+        
+        def generate_and_play():
+            try:
+                resp = self.client.audio.speech.create(
+                    input=text,
+                    model="tts-1",
+                    voice=voice,
+                    response_format="wav"
+                )
+                audio_data = None
+                if isinstance(resp, (bytes, bytearray)):
+                    audio_data = resp
+                elif hasattr(resp, "read"):
+                    audio_data = resp.read()
+                elif hasattr(resp, "content"):
+                    audio_data = resp.content
+                elif hasattr(resp, "iter_bytes"):
+                    audio_data = b"".join(resp.iter_bytes())
+                else:
+                    raise TypeError(f"Unknown response type: {type(resp)}")
+                
+                bio = io.BytesIO(audio_data)
+                data, sr = sf.read(bio, dtype="float32")
+                
+                # Simple playback without level/timer updates for settings
+                if data.ndim == 1:
+                    data = data.reshape(-1, 1)
+                
+                def callback(outdata, frames, time_info, status):
+                    nonlocal idx
+                    if status:
+                        print(status)
+                    end = idx + frames
+                    chunk = data[idx:end]
+                    if len(chunk) < frames:
+                        outdata[:len(chunk)] = chunk
+                        outdata[len(chunk):] = 0
+                        raise sd.CallbackStop()
+                    outdata[:] = chunk
+                    idx = end
+                
+                idx = 0
+                stream = sd.OutputStream(samplerate=sr, channels=data.shape[1], callback=callback)
+                stream.start()
+                while stream.active:
+                    time.sleep(0.1)
+                stream.stop()
+                stream.close()
+                
+            except Exception as exc:
+                GLib.idle_add(self.show_error, "Voice test error", str(exc))
+        
+        threading.Thread(target=generate_and_play, daemon=True).start()
+
+    def on_settings_response(self, dialog, response):
+        """Handle settings dialog response."""
+        if response == Gtk.ResponseType.ACCEPT:
+            # Update configuration
+            self.config["voices"]["female"] = self.female_voice_combo.get_active_id() or "nova"
+            self.config["voices"]["male"] = self.male_voice_combo.get_active_id() or "onyx"
+            self.config["languages"]["default_source"] = self.source_lang_combo.get_active_id() or "en"
+            self.config["languages"]["default_target"] = self.target_lang_combo.get_active_id() or "es"
+            
+            # Save configuration
+            if save_config(self.config):
+                self.show_info("Settings", "Configuration saved successfully.")
+            else:
+                self.show_error("Settings", "Failed to save configuration.")
+        
+        dialog.close()
+
+    # ------------------------------------------------------------------
     # Dialog helpers
     # ------------------------------------------------------------------
 
@@ -454,9 +728,20 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 class DictAiTeApp(Gtk.Application):
     def __init__(self) -> None:
         super().__init__(application_id="com.example.dictaite")
+        
+        # Add settings action
+        settings_action = Gio.SimpleAction.new("settings", None)
+        settings_action.connect("activate", self.on_settings_action)
+        self.add_action(settings_action)
+
+    def on_settings_action(self, action, param):
+        """Handle settings action."""
+        if hasattr(self, '_window'):
+            self._window.show_settings_dialog(action, param)
 
     def do_activate(self) -> None:  # pragma: no cover - UI startup
         win = DictAiTeWindow(self)
+        self._window = win  # Store reference for settings action
         win.present()
 
 

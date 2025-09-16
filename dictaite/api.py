@@ -8,16 +8,18 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # Default model and prompt settings
-WHISPER_MODEL = "whisper-1"
+WHISPER_MODEL = "gpt-4o-transcribe"
 WHISPER_PROMPT = (
     "Transcribe the audio and return well-structured paragraphs. "
-    "Use blank lines to separate paragraphs and fix simple punctuation errors."
+    "Use blank lines to separate paragraphs and fix simple punctuation errors. "
+    "Ensure proper spacing, punctuation, and clear paragraph breaks."
 )
-CHAT_MODEL = "gpt-3.5-turbo"
+CHAT_MODEL = "gpt-4o-mini-2025-08-07"
 CHAT_TEMPERATURE = 0.2
 CHAT_PROMPT_TEMPLATE = (
     "Translate the following text from {src_name} to {tgt_name}. "
     "Format the translation into clear paragraphs separated by blank lines. "
+    "Ensure proper spacing, punctuation, and paragraph structure. "
     "Return only the translated text.\n\n{text}"
 )
 
