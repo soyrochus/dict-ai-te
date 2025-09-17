@@ -1,87 +1,206 @@
-**Purpose**
-- This file guides future contributors and agents on how dict‑ai‑te is structured, how to add features, and how to work safely across both the GTK desktop UI and the NiceGUI web UI.
+# Prompt: Refactor `dict-ai-te` for pluggable UIs and add a Flask web UI
 
-**Core Requirements**
-- Transcription model: `gpt-4o-transcribe` (not Whisper).
-- Translation model: `gpt-5-mini-2025-08-07` (not gpt‑3.5‑turbo).
-- Always format output text: clear spacing, correct punctuation, blank lines between paragraphs.
-- Settings: default origin language, default target language, translation enabled flag, female/male voice values with preview buttons.
-- Config file: `$HOME/.config/dict-ai-te/dict-ai-te_config.toml` (TOML). Create parents/file if missing; ignore read errors; use defaults.
+## Goal
 
-**Architecture Overview**
-- Backend API: `dictaite/api.py`
-  - `get_openai_client()`: loads API key from env/.env.
-  - `transcribe_file(file, language)`: uses `gpt-4o-transcribe`.
-  - `translate_text(text, src_name, tgt_name)`: uses `gpt-5-mini-2025-08-07`.
-  - `format_structured_text(text)`: normalizes whitespace and paragraphs.
-  - `synthesize_speech_wav(text, voice)`: returns WAV bytes via OpenAI TTS.
-- Shared constants: `dictaite/constants.py`
-  - `LANGUAGES`, `LANGUAGE_NAME`, `FEMALE_VOICES`, `MALE_VOICES`, `VOICE_SAMPLE_TEXT`.
-- Configuration: `dictaite/config.py`
-  - Dataclass with defaults; `load()` ignores missing/invalid files; `save()` writes TOML at the XDG path above.
-- GTK UI: `dictaite/__main__.py`
-  - Desktop app (GTK 4). Uses shared constants and backend API functions.
-- Web UI (NiceGUI): `dictaite/web.py`
-  - Alternative web interface. Optional dependency (`pip install nicegui`).
-  - Reuses the same backend API and config.
+Refactor the existing `dict-ai-te` desktop app so the UI is fully decoupled from the core logic, then add an optional web interface (Flask) that reuses the same backend services and mirrors the GTK UI and behavior. The web UI must support audio recording, audio testing, playback, transcription via OpenAI Whisper, optional translation, copy/download, and settings.
 
-**CLI Entrypoint**
-- Binary script: `bin/dictaite` runs the module (`uv run -m dictaite`).
-- Launch GTK (default): `python -m dictaite` or `bin/dictaite`.
-- Launch Web (NiceGUI): `python -m dictaite --web [--host HOST --port PORT]`.
-- The `--web` flag is optional; if NiceGUI is missing, the app prints an install hint.
+## Inputs you have
 
-**GTK Frontend Expectations**
-- Translate control is a compact `Gtk.Switch` aligned start (no stretching).
-- Settings dialog includes:
-  - Default origin language and default target language.
-  - “Translate by default” switch enabling/disabling the target selector.
-  - Female and Male voice selects, each with a “Play” preview button.
-- When translation is enabled in the main window, the target language combo becomes sensitive.
+* Project README describing current features and environment.
+* Current GTK4/PyGObject app code.
+* Two reference images for layout parity:
 
-**NiceGUI Frontend Expectations**
-- Controls mirror GTK: origin language, translate switch, target language, female/male voice selects with Play.
-- Transcript area with buttons to Copy, Download, and Play Transcript (TTS).
-- Upload audio (accept `audio/*`). Optional in‑browser recording via MediaRecorder that feeds the upload flow.
-- Settings can be saved, persisting to the same TOML config.
+  * `design/main-window.png` (or provided as `main-window.png`)
+  * `design/settings-panel.png` (or provided as `settings-panel.png`)
+* Text to insert in the web UI about section or footer: `XXX`.
 
-**Text Formatting Guarantee**
-- Always run transcription and translation results through `format_structured_text()`.
-- Ensure output contains blank lines between paragraphs and normalized spacing/punctuation.
-- Any new feature producing user-visible text must call the formatter before rendering or saving.
+## Deliverables
 
-**Configuration Details**
-- Path: `$HOME/.config/dict-ai-te/dict-ai-te_config.toml`.
-- Defaults: `default_language='default'`, `default_target_language='en'`, `translation_enabled=false`, `female_voice='nova'`, `male_voice='onyx'`.
-- On `load()`: if the file is missing, unreadable, or invalid TOML, silently fall back to defaults.
-- On `save()`: create parent directories if needed; write TOML.
+1. A clean architecture split with a shared backend service layer.
+2. A Flask web app providing the same functionality and layout as the GTK app.
+3. Build and run scripts, tests, and migration notes.
+4. Minimal docs: `ARCHITECTURE.md` and `WEBUI.md`.
 
-**Models and Prompts**
-- Transcription model: `gpt-4o-transcribe` with a prompt that encourages clear paragraphs and punctuation.
-- Translation model: `gpt-5-mini-2025-08-07` with a prompt to return only translated text, formatted in paragraphs separated by blank lines.
-- Keep translation temperature conservative (e.g., `0.2`) for fidelity.
+## Non-functional constraints
 
-**Development Guidelines**
-- Reuse backend helpers in `dictaite/api.py` instead of duplicating logic in UIs.
-- Reuse `LANGUAGES` and voice lists from `dictaite/constants.py`; don’t redefine.
-- Keep NiceGUI dependency optional and guarded; do not break GTK when NiceGUI isn’t installed.
-- Respect config defaults and ignore read errors; never crash on missing config.
-- Keep UI code minimal and focused on wiring; avoid embedding business logic in UI layers.
+* Python 3.12+ where possible.
+* Keep dependencies minimal. For the web, use Flask + vanilla JS; no heavy frontend frameworks.
+* Audio: in the browser use MediaRecorder + WebAudio; on desktop keep current PortAudio pipeline.
+* Cross-platform: Linux, macOS, Windows. 
+* Keep OpenAI keys in env vars or `.env` as today.
+* MIT license preserved.
 
-**Testing Suggestions**
-- Add unit tests for:
-  - `format_structured_text()` (whitespace normalization, paragraph splitting).
-  - Config load/save round‑trip (with missing/invalid files).
-  - Web upload handler (inject small audio fixtures; assert formatted output).
-- Favor small, direct tests near the code they validate; avoid broad integration tests unless necessary.
+---
 
-**Runbook**
-- GTK: `bin/dictaite`
-- Web: `bin/dictaite --web --host 127.0.0.1 --port 8080`
-- Install optional web dep: `uv add nicegui`
+## 1) Target architecture
 
-**Notes for Future Changes**
-- If adding new language/voice options, update `dictaite/constants.py` and ensure both UIs pick them up.
-- Any new feature producing text must pass results through `format_structured_text()` before display or save.
-- Keep the `--web` flag backward compatible; never break the default GTK path.
+Introduce a package `dictaite.core` that has **no GUI imports**.
+Reactor everyting so there are 3 modules
+1 for the GtK UI
+1 for the Web UI/backend
+1 for the transcrition/AI etc logic (reuseing existing funcionality)
 
+### Service layer API (to be used by both UIs)
+
+```python
+# dictaite_core/services/stt.py
+def transcribe(audio: bytes, mimetype: str, language: str | None) -> str: ...
+
+# dictaite_core/services/translate.py
+def translate(text: str, target_lang: str) -> str: ...
+
+# dictaite_core/config.py
+@dataclass
+class Settings:
+    default_language: str | None  # auto-detect if None
+    translate_by_default: bool
+    default_target_language: str | None
+    female_voice: str             # e.g., "Nova"
+    male_voice: str               # e.g., "Onyx"
+```
+
+Use OpenAI Whisper transcription as today. Keep translation via the same provider you currently use.
+
+---
+
+## 2) Flask web app requirements
+
+### Routes
+
+* `GET /` → main page (recording UI).
+* `GET /settings` → settings panel UI.
+* `POST /api/transcribe`
+
+  * Body: `multipart/form-data` with `audio` (blob), `language` (optional), `translate` (bool), `target_lang` (optional).
+  * Response: `{ text, translatedText?, durationMs }`.
+* `POST /api/tts-test` (optional voice test)
+
+  * Body: `{ gender: "female"|"male", text }`.
+  * Response: audio bytes (set `Content-Type: audio/wav`).
+* `GET /api/health` → `{ ok: true }`.
+
+### Security and ops
+
+* Read OpenAI key from env or `.env`.
+* Limit uploads to ≤ 2 min and accepted mime types `audio/webm`, `audio/wav`, `audio/ogg`.
+* Use Flask app factory pattern and Blueprints.
+* Add CORS disabled by default.
+* Add simple rate limit placeholder (document where to plug in).
+
+### Browser audio handling
+
+* Use `navigator.mediaDevices.getUserMedia({ audio: true })`.
+* Record with `MediaRecorder`. Store chunks, `onstop` assemble a Blob.
+* Show real-time level meter using WebAudio `AnalyserNode`.
+* Provide controls: Record/Stop, Play, Copy, Download, Clear.
+* Provide a small elapsed time display and a status bar.
+
+### UI layout parity
+
+Replicate the GTK layout from the two images.
+
+**Main window (`index.html`)**
+
+* Header row: app title left, **Settings** button right.
+* Central panel: large microphone icon that toggles recording state.
+
+  * Below: “Press to start recording” label and `00:00:00` timer.
+* “Origin language” dropdown.
+* “Translate to” toggle; when on, show “Destination language” dropdown.
+* Text area for transcript.
+* Bottom action row: Download, Copy, Play, Record gender selector (Female/Male).
+* Keyboard shortcuts:
+
+  * `Space` → start/stop recording when focus not in textarea.
+  * `Ctrl/Cmd+C` → copy transcript.
+  * `Ctrl/Cmd+S` → download transcript `.txt`.
+
+**Settings panel (`settings.html`)**
+
+* Default language dropdown (“Default — Auto-detect”).
+* “Translate by default” toggle.
+* “Default target language” dropdown.
+* Female voice select with “Play” button.
+* Male voice select with “Play” button.
+* Footer note: include `XXX`.
+* Buttons: **Cancel** (link back), **Save** (POST to `/api/settings` or store in localStorage if you prefer client-side).
+
+Match spacing, labels, and order shown in `main-window.png` and `settings-panel.png`. Use simple CSS grid and system fonts. Use tailwind.css for layout.
+
+### Client–server flow
+
+1. On stop recording, `app.js` posts the audio blob to `/api/transcribe` with chosen language and flags.
+2. Server saves blob to temp, runs `dictaite_core.services.stt.transcribe`, optionally runs translate, returns JSON.
+3. Client fills the textarea with the returned text (and translated text when applicable).
+4. Play button either replays the recorded blob or calls `/api/tts-test` to synthesize a test phrase using the selected voice. Document which you implement.
+
+---
+
+## 3) GTK app adjustments
+
+* Replace any direct OpenAI calls in UI code with calls to `dictaite_core.services.*`.
+* Ensure GUI code has zero imports from `openai` or other provider SDKs.
+* Keep the same behavior and labels as today.
+
+---
+
+## 4) Implementation details
+
+### Packaging
+
+* Keep `pyproject.toml` and add optional extras:
+
+  * `ui-gtk`: `["PyGObject", "portaudio"]`
+  * `ui-web`: `["flask", "python-dotenv"]`
+* CLI scripts:
+
+  * `bin/dictaite` → launches GTK UI.
+  * `bin/dictaite-web` → `FLASK_ENV=production python -m ui_web.app` with `--host 0.0.0.0 --port 5000`.
+
+### MIME and formats
+
+* Prefer WAV PCM 16-bit server-side for Whisper accuracy. If MediaRecorder yields `webm/ogg`, transcode to WAV using `pydub` or `soundfile`. Keep it minimal.
+
+### Errors
+
+* Standard JSON error schema: `{ "error": { "code": "...", "message": "..." } }` with proper HTTP codes.
+
+### Tests
+
+* Unit tests for `transcribe()` and `translate()` using short fixtures.
+* API test: `POST /api/transcribe` with a tiny WAV fixture.
+* Lightweight Playwright or pytest-playwright smoke for recording controls is a plus; otherwise document manual steps.
+
+---
+
+## 5) Definition of Done
+
+* GTK app runs unchanged in behavior, now importing only `dictaite_core`.
+* Flask app runs with `bin/dictaite-web`, serves `index.html` and `settings.html`, and mirrors the GTK layout and features shown in the two images.
+* Browser recording, playback, transcription and optional translation all work end-to-end.
+* Users can copy and download transcripts.
+* Settings persist for the session; if feasible, save to a small JSON in `~/.dictaite/settings.json`, else use localStorage and document it.
+* `ARCHITECTURE.md` explains layers, contracts, and how to add future UIs.
+* `WEBUI.md` explains how to run the Flask app and browser permissions.
+* Lint passes; tests green.
+
+---
+
+## 6) Migration notes for the agent to generate
+
+* Move current business logic into `dictaite_core`.
+* Replace any blocking I/O in services with async if trivial; otherwise keep sync and run in threadpool on the web side.
+* Keep public service function signatures stable and documented.
+* Add minimal logging with `logging` module.
+
+---
+
+## 7) Out of scope
+
+* Heavy frontend frameworks.
+* Multi-user auth.
+* Cloud deployment scripts beyond a simple `gunicorn` note in `WEBUI.md`.
+
+---
+
+**Execute the refactor and web UI creation as above. Produce code, tests, and docs. Keep the UI texts and control order identical to the GTK app unless infeasible in the browser.**
