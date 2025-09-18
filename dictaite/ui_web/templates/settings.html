@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dict-ai-te · Settings</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  </head>
+  <body class="min-h-screen bg-slate-900 text-slate-100">
+    <div class="mx-auto flex min-h-screen max-w-2xl flex-col px-4 py-8">
+      <header class="mb-6 flex items-center justify-between">
+        <h1 class="text-2xl font-semibold">Settings</h1>
+        <a
+          href="{{ url_for('pages.index') }}"
+          class="rounded border border-slate-500 px-4 py-2 text-sm font-medium hover:bg-slate-800"
+        >
+          Cancel
+        </a>
+      </header>
+
+      <main class="flex-1">
+        <form id="settingsForm" class="space-y-6">
+          <div>
+            <label for="defaultLanguage" class="block text-sm font-medium">Default language</label>
+            <select
+              id="defaultLanguage"
+              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+            >
+              <option value="">Default — Auto-detect</option>
+              {% for lang in languages %}
+              <option value="{{ lang.code }}" {% if settings.default_language == lang.code %}selected{% endif %}>
+                {{ lang.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <label class="text-sm font-medium" for="translateDefault">Translate by default</label>
+            <button
+              id="translateDefault"
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full border border-slate-600"
+              data-active="{{ 'true' if settings.translate_by_default else 'false' }}"
+            >
+              <span class="sr-only">Toggle translate by default</span>
+              <span class="inline-block h-5 w-5 transform rounded-full bg-slate-300 transition"></span>
+            </button>
+          </div>
+
+          <div id="defaultTargetGroup" {% if not settings.translate_by_default %}hidden{% endif %}>
+            <label for="defaultTarget" class="block text-sm font-medium">Default target language</label>
+            <select
+              id="defaultTarget"
+              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+            >
+              <option value="">None</option>
+              {% for lang in target_languages %}
+              <option value="{{ lang.code }}" {% if settings.default_target_language == lang.code %}selected{% endif %}>
+                {{ lang.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label for="femaleVoice" class="block text-sm font-medium">Female voice</label>
+            <div class="mt-2 flex items-center gap-3">
+              <select
+                id="femaleVoice"
+                class="w-full rounded border border-slate-700 bg-slate-800 p-2"
+              >
+                {% for value, caption in female_voices %}
+                <option value="{{ value }}" {% if settings.female_voice == value %}selected{% endif %}>{{ caption }}</option>
+                {% endfor %}
+              </select>
+              <button
+                type="button"
+                data-voice-control="female"
+                class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              >
+                Play
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label for="maleVoice" class="block text-sm font-medium">Male voice</label>
+            <div class="mt-2 flex items-center gap-3">
+              <select
+                id="maleVoice"
+                class="w-full rounded border border-slate-700 bg-slate-800 p-2"
+              >
+                {% for value, caption in male_voices %}
+                <option value="{{ value }}" {% if settings.male_voice == value %}selected{% endif %}>{{ caption }}</option>
+                {% endfor %}
+              </select>
+              <button
+                type="button"
+                data-voice-control="male"
+                class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              >
+                Play
+              </button>
+            </div>
+          </div>
+        </form>
+      </main>
+
+      <footer class="mt-8 space-y-4 text-sm text-slate-400">
+        <p>{{ footer_note }}</p>
+        <div class="flex justify-end gap-3">
+          <a
+            href="{{ url_for('pages.index') }}"
+            class="rounded border border-slate-500 px-4 py-2 text-sm hover:bg-slate-800"
+          >
+            Cancel
+          </a>
+          <button
+            id="saveSettings"
+            type="button"
+            class="rounded bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-emerald-400"
+          >
+            Save
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <audio id="voicePreview" class="hidden"></audio>
+
+    <script>
+      window.dictaiteSettingsConfig = {
+        updateUrl: "{{ url_for('api.api_update_settings') }}",
+        ttsUrl: "{{ url_for('api.api_tts_test') }}",
+        sampleText: "{{ VOICE_SAMPLE_TEXT|e }}",
+      };
+    </script>
+    <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+  </body>
+</html>

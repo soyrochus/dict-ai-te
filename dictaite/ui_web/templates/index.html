@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dict-ai-te</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  </head>
+  <body class="min-h-screen bg-slate-900 text-slate-100">
+    <div class="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-8">
+      <header class="mb-8 flex items-center justify-between">
+        <h1 class="text-3xl font-semibold">dict-ai-te</h1>
+        <a
+          href="{{ url_for('pages.settings_page') }}"
+          class="rounded border border-slate-500 px-4 py-2 text-sm font-medium hover:bg-slate-800"
+        >
+          Settings
+        </a>
+      </header>
+
+      <main class="flex flex-1 flex-col space-y-8">
+        <section class="flex flex-col items-center space-y-4">
+          <div class="h-2 w-full overflow-hidden rounded bg-slate-800">
+            <div id="levelMeter" class="h-full w-0 bg-emerald-400"></div>
+          </div>
+          <button
+            id="recordButton"
+            type="button"
+            class="flex h-32 w-32 items-center justify-center rounded-full bg-emerald-500 transition hover:bg-emerald-400"
+          >
+            <span class="sr-only">Toggle recording</span>
+            <svg
+              id="recordIcon"
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-16 w-16"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path d="M10 4a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3z" />
+              <path
+                d="M5 9a5 5 0 0 0 10 0h1a6 6 0 0 1-5 5.917V18h-2v-3.083A6 6 0 0 1 4 9h1z"
+              />
+            </svg>
+          </button>
+          <p id="statusLabel" class="text-sm text-slate-300">
+            Press to start recording
+          </p>
+          <p id="timerLabel" class="text-2xl font-mono">00:00:00</p>
+        </section>
+
+        <section class="space-y-4">
+          <div>
+            <label for="languageSelect" class="block text-sm font-medium">Origin language</label>
+            <select
+              id="languageSelect"
+              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+            >
+              {% for lang in languages %}
+              <option value="{{ lang.code }}" {% if settings.default_language == lang.code %}selected{% endif %}>
+                {{ lang.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <label class="text-sm font-medium" for="translateToggle">Translate to</label>
+            <button
+              id="translateToggle"
+              type="button"
+              class="relative inline-flex h-6 w-11 items-center rounded-full border border-slate-600"
+              data-active="{{ 'true' if settings.translate_by_default else 'false' }}"
+            >
+              <span class="sr-only">Toggle translation</span>
+              <span
+                id="translateThumb"
+                class="inline-block h-5 w-5 transform rounded-full bg-slate-300 transition"
+              ></span>
+            </button>
+          </div>
+
+          <div id="targetContainer" class="transition-all" {% if not settings.translate_by_default %}hidden{% endif %}>
+            <label for="targetSelect" class="block text-sm font-medium">Destination language</label>
+            <select
+              id="targetSelect"
+              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+            >
+              {% for lang in target_languages %}
+              <option value="{{ lang.code }}" {% if settings.default_target_language == lang.code %}selected{% endif %}>
+                {{ lang.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </section>
+
+        <section class="flex-1">
+          <label for="transcript" class="mb-2 block text-sm font-medium">Transcript</label>
+          <textarea
+            id="transcript"
+            class="h-64 w-full rounded border border-slate-700 bg-slate-900 p-3 font-mono"
+            placeholder="Transcript will appear here..."
+          ></textarea>
+        </section>
+
+        <section class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div class="flex gap-3">
+            <button
+              id="downloadButton"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+            >
+              Download
+            </button>
+            <button
+              id="copyButton"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+            >
+              Copy
+            </button>
+            <button
+              id="clearButton"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+            >
+              Clear
+            </button>
+            <button
+              id="playButton"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+            >
+              Play
+            </button>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <span class="text-sm font-medium">Record voice</span>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="radio" name="voiceGender" value="female" checked />
+              Female
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input type="radio" name="voiceGender" value="male" />
+              Male
+            </label>
+          </div>
+        </section>
+      </main>
+
+      <footer class="mt-8 text-xs text-slate-500">
+        <p>
+          Space: start/stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S: download transcript
+        </p>
+      </footer>
+    </div>
+
+    <audio id="playback" class="hidden"></audio>
+
+    <script>
+      window.dictaiteConfig = {
+        settingsUrl: "{{ url_for('api.api_get_settings') }}",
+        transcribeUrl: "{{ url_for('api.api_transcribe') }}",
+        ttsUrl: "{{ url_for('api.api_tts_test') }}",
+        updateSettingsUrl: "{{ url_for('api.api_update_settings') }}",
+        defaultTranslate: {{ 'true' if settings.translate_by_default else 'false' }},
+      };
+    </script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>

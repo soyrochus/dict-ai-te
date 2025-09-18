@@ -100,7 +100,16 @@ or use the script in the bin directory
 <source dir>>bin/dictaite
 ```
 
-Note that the script needs to have the executable permision set. 
+Note that the script needs to have the executable permision set.
+
+### 5. Launch the Web UI
+
+```bash
+uv sync --extra ui-web
+bin/dictaite-web
+```
+
+Visit `http://localhost:5000` to use the browser interface. See [WEBUI.md](WEBUI.md) for details.
 
 ## Configuration
 

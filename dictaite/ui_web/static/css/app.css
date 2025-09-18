@@ -1,0 +1,25 @@
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+#recordButton.recording {
+  background-color: #f87171;
+}
+
+#recordButton.recording:hover {
+  background-color: #ef4444;
+}
+
+#translateToggle[data-active="true"] #translateThumb {
+  transform: translateX(1.25rem);
+  background-color: #34d399;
+}
+
+#translateToggle[data-active="false"] #translateThumb {
+  transform: translateX(0.25rem);
+}
+
+textarea:focus, select:focus, button:focus {
+  outline: 2px solid rgba(96, 165, 250, 0.75);
+  outline-offset: 2px;
+}

@@ -1,206 +1,147 @@
-# Prompt: Refactor `dict-ai-te` for pluggable UIs and add a Flask web UI
+# Prompt: Add real voice recording to doctaite.ui_web
 
-## Goal
+# Role
 
-Refactor the existing `dict-ai-te` desktop app so the UI is fully decoupled from the core logic, then add an optional web interface (Flask) that reuses the same backend services and mirrors the GTK UI and behavior. The web UI must support audio recording, audio testing, playback, transcription via OpenAI Whisper, optional translation, copy/download, and settings.
+You are **Senior Full-Stack Engineer (Flask + Vanilla JS)** working on **DictAIT – Web (Flask)**. Your task is to implement working microphone capture and recording controls in the main screen and reuse the existing **audio backend used by the GTK client**. You must not modify that backend’s API or add a new streaming protocol.
 
-## Inputs you have
+# North Star
 
-* Project README describing current features and environment.
-* Current GTK4/PyGObject app code.
-* Two reference images for layout parity:
+Enable users to click **Toggle Recording** → record speech → click **Stop Recording** → the recorded audio file is saved server-side and then submitted to the **existing** transcription or translation endpoints used by the GTK client. The UI must show state and a running timer.
 
-  * `design/main-window.png` (or provided as `main-window.png`)
-  * `design/settings-panel.png` (or provided as `settings-panel.png`)
-* Text to insert in the web UI about section or footer: `XXX`.
+# Ground Rules
 
-## Deliverables
+* **Do not change** the AI/audio backend the GTK version uses. Call it exactly the same way, with the same parameters and content types.
+* **No new streaming interface.** If you stream chunks from the browser, you must **reassemble** them in the Flask web app and then call the existing backend as a file upload, just like GTK does after it records.
+* Keep dependencies minimal: Vanilla JS in the browser. Flask + standard Python libs server-side. Avoid heavy front-end frameworks.
+* Security: request mic permission only on user action, never on page load. Stop and release the mic on “Stop Recording,” page hide, or navigation.
+* Accessibility: button must be focusable and operable by keyboard. Aria label reflects state.
 
-1. A clean architecture split with a shared backend service layer.
-2. A Flask web app providing the same functionality and layout as the GTK app.
-3. Build and run scripts, tests, and migration notes.
-4. Minimal docs: `ARCHITECTURE.md` and `WEBUI.md`.
+# Repo Assumptions (adapt if paths differ)
 
-## Non-functional constraints
+* Flask app package: `web/` with `app.py`, templates in `web/templates/`, static assets in `web/static/`.
+* GTK client shows how to call the backend. Look for a module like `core/audio_client.py` or similar that performs the POST to the backend. **Reuse identical call semantics.**
 
-* Python 3.12+ where possible.
-* Keep dependencies minimal. For the web, use Flask + vanilla JS; no heavy frontend frameworks.
-* Audio: in the browser use MediaRecorder + WebAudio; on desktop keep current PortAudio pipeline.
-* Cross-platform: Linux, macOS, Windows. 
-* Keep OpenAI keys in env vars or `.env` as today.
-* MIT license preserved.
+# What to Build
 
----
+1. **Main screen wiring**
 
-## 1) Target architecture
+   * There is already a **big button** “Toggle Recording” under the **Settings** link, with caption text “Press to Start Recording,” plus a **timer** under it.
+   * Implement click handler that:
 
-Introduce a package `dictaite.core` that has **no GUI imports**.
-Reactor everyting so there are 3 modules
-1 for the GtK UI
-1 for the Web UI/backend
-1 for the transcrition/AI etc logic (reuseing existing funcionality)
+     * On idle state: requests mic access via `navigator.mediaDevices.getUserMedia({ audio: true })`, creates a `MediaRecorder`, starts recording, and starts the timer. Update label to **Stop Recording** and the caption to **Recording…**.
+     * On recording state: stops recorder, stops timer, finalizes client-side state, and triggers upload completion flow.
 
-### Service layer API (to be used by both UIs)
+2. **Chunked upload to server**
 
-```python
-# dictaite_core/services/stt.py
-def transcribe(audio: bytes, mimetype: str, language: str | None) -> str: ...
+   * Use `MediaRecorder` with `mimeType` negotiated from the browser, commonly `audio/webm` or `audio/webm;codecs=opus`.
+   * On `dataavailable`, **POST each chunk** to Flask endpoint `/api/record/append` as `multipart/form-data` with fields:
 
-# dictaite_core/services/translate.py
-def translate(text: str, target_lang: str) -> str: ...
+     * `session_id` (UUID generated once per recording),
+     * `seq` (monotonic integer),
+     * `chunk` (the Blob).
+   * Add an endpoint `/api/record/start` to allocate a `session_id` and create a temp file path, and `/api/record/finalize` to close and return the final server file path.
+   * Server behavior:
 
-# dictaite_core/config.py
-@dataclass
-class Settings:
-    default_language: str | None  # auto-detect if None
-    translate_by_default: bool
-    default_target_language: str | None
-    female_voice: str             # e.g., "Nova"
-    male_voice: str               # e.g., "Onyx"
-```
+     * Append chunk bytes to a temp file under `tmp/recordings/<session_id>.webm` in arrival order. Use a simple append protocol keyed by `session_id`, validating `seq`.
 
-Use OpenAI Whisper transcription as today. Keep translation via the same provider you currently use.
+     * On finalize, ensure the file is closed and accessible to the following step.
 
----
+   > Note: This is **not a new streaming protocol** for the AI backend. It is only a browser→Flask upload mechanism, after which you will call the **existing** backend with a single file, exactly as the GTK client already does.
 
-## 2) Flask web app requirements
+3. **Reuse the existing backend invocation**
 
-### Routes
+   * After finalize, call the **same function or HTTP endpoint** the GTK client uses for transcription or translation.
+   * Preserve:
 
-* `GET /` → main page (recording UI).
-* `GET /settings` → settings panel UI.
-* `POST /api/transcribe`
+     * **Content type**,
+     * **File format** expectations,
+     * **Query/body parameters**,
+     * **Auth headers or API keys**,
+     * **Model selection** and options.
+   * Provide a **user option** to choose **Transcribe** vs **Translate** before recording begins. Default to Transcribe if none chosen. Do not change backend behavior.
 
-  * Body: `multipart/form-data` with `audio` (blob), `language` (optional), `translate` (bool), `target_lang` (optional).
-  * Response: `{ text, translatedText?, durationMs }`.
-* `POST /api/tts-test` (optional voice test)
+4. **UI feedback**
 
-  * Body: `{ gender: "female"|"male", text }`.
-  * Response: audio bytes (set `Content-Type: audio/wav`).
-* `GET /api/health` → `{ ok: true }`.
+   * Timer format `MM:SS`, updates every second while recording.
+   * Button text toggles between **Toggle Recording** → **Stop Recording**.
+   * Show subtle status text: “Ready,” “Recording…,” “Uploading…,” “Processing…,” “Done.”
+   * On success, render the returned transcript or translation in the existing result panel or a simple `<pre>`.
 
-### Security and ops
+5. **Edge cases**
 
-* Read OpenAI key from env or `.env`.
-* Limit uploads to ≤ 2 min and accepted mime types `audio/webm`, `audio/wav`, `audio/ogg`.
-* Use Flask app factory pattern and Blueprints.
-* Add CORS disabled by default.
-* Add simple rate limit placeholder (document where to plug in).
+   * Denied microphone permission → show actionable message and revert to idle.
+   * If any chunk upload fails → offer Retry or Cancel. Cancel deletes temp file via `/api/record/cancel?session_id=…`.
+   * On browser that lacks `MediaRecorder` for the chosen mime type, fall back to default without specifying `mimeType`.
 
-### Browser audio handling
+# Files to Add or Modify (suggested)
 
-* Use `navigator.mediaDevices.getUserMedia({ audio: true })`.
-* Record with `MediaRecorder`. Store chunks, `onstop` assemble a Blob.
-* Show real-time level meter using WebAudio `AnalyserNode`.
-* Provide controls: Record/Stop, Play, Copy, Download, Clear.
-* Provide a small elapsed time display and a status bar.
+* `web/templates/main.html`
 
-### UI layout parity
+  * Add `id="recordBtn"`, `id="recordCaption"`, `id="recordTimer"`, and a select or toggle for Transcribe vs Translate.
+  * Include `<script src="{{ url_for('static', filename='js/record.js') }}"></script>`.
+* `web/static/js/record.js`
 
-Replicate the GTK layout from the two images.
+  * Implement state machine: `idle | recording | uploading | processing | done | error`.
+  * Implement `startRecording()`, `stopRecording()`, `postChunk(seq, blob)`, `finalizeRecording()`, `updateUI(state)`, and timer helpers.
+* `web/app.py`
 
-**Main window (`index.html`)**
+  * Endpoints:
 
-* Header row: app title left, **Settings** button right.
-* Central panel: large microphone icon that toggles recording state.
+    * `POST /api/record/start` → returns `session_id`.
+    * `POST /api/record/append` → appends chunk bytes to `tmp/recordings/{session_id}.webm`.
+    * `POST /api/record/finalize` → closes file and triggers **existing backend call** using the same code path as GTK. Returns JSON with transcript or translation.
+    * `POST /api/record/cancel` → deletes temp file.
+  * A thin wrapper that **reuses** the backend client used by GTK, e.g., import `from core.audio_client import transcribe_file, translate_file` and call those functions unchanged.
 
-  * Below: “Press to start recording” label and `00:00:00` timer.
-* “Origin language” dropdown.
-* “Translate to” toggle; when on, show “Destination language” dropdown.
-* Text area for transcript.
-* Bottom action row: Download, Copy, Play, Record gender selector (Female/Male).
-* Keyboard shortcuts:
+# Acceptance Criteria
 
-  * `Space` → start/stop recording when focus not in textarea.
-  * `Ctrl/Cmd+C` → copy transcript.
-  * `Ctrl/Cmd+S` → download transcript `.txt`.
+* Clicking **Toggle Recording** starts mic capture, changes button to **Stop Recording**, shows a running timer, and begins chunk uploads.
+* On **Stop Recording**, the temp file is finalized server-side, then submitted to the **same backend endpoint** used by GTK. No parameter or format drift.
+* A successful transcript or translation appears in the UI. Errors are surfaced with plain language and a retry option.
+* No changes to the AI/audio backend code or API. The Flask web app is the only place you add endpoints.
+* Basic keyboard a11y works: Space/Enter toggles the button, Escape stops recording.
 
-**Settings panel (`settings.html`)**
+# Test Plan
 
-* Default language dropdown (“Default — Auto-detect”).
-* “Translate by default” toggle.
-* “Default target language” dropdown.
-* Female voice select with “Play” button.
-* Male voice select with “Play” button.
-* Footer note: include `XXX`.
-* Buttons: **Cancel** (link back), **Save** (POST to `/api/settings` or store in localStorage if you prefer client-side).
+1. **Happy path**
 
-Match spacing, labels, and order shown in `main-window.png` and `settings-panel.png`. Use simple CSS grid and system fonts. Use tailwind.css for layout.
+   * Record 5–10 seconds. Verify chunks arrive in order, final file exists with expected size, backend receives the exact file and returns text.
+2. **Permission denied**
 
-### Client–server flow
+   * Deny mic access. Verify idle state with helpful prompt and no network calls.
+3. **Chunk failure**
 
-1. On stop recording, `app.js` posts the audio blob to `/api/transcribe` with chosen language and flags.
-2. Server saves blob to temp, runs `dictaite_core.services.stt.transcribe`, optionally runs translate, returns JSON.
-3. Client fills the textarea with the returned text (and translated text when applicable).
-4. Play button either replays the recorded blob or calls `/api/tts-test` to synthesize a test phrase using the selected voice. Document which you implement.
+   * Simulate one `append` failure. Ensure UI shows retry. After retry, file finalizes correctly.
+4. **MIME compatibility**
 
----
+   * Chrome and Firefox on desktop: verify `audio/webm` or auto mime. Confirm backend accepts the reassembled file. If backend needs WAV, convert server-side before calling it, but **do not** change backend API.
+5. **Translate vs Transcribe**
 
-## 3) GTK app adjustments
+   * Toggle mode and verify the correct existing backend function is called.
 
-* Replace any direct OpenAI calls in UI code with calls to `dictaite_core.services.*`.
-* Ensure GUI code has zero imports from `openai` or other provider SDKs.
-* Keep the same behavior and labels as today.
+# Non-Goals
 
----
+* No WebRTC or WebSocket low-latency streaming to the AI backend.
+* No backend API changes. No new models or parameters.
+* No SPA framework introduction.
 
-## 4) Implementation details
+# Telemetry and Logs
 
-### Packaging
+* Server logs per recording: `session_id`, chunk counts, total bytes, duration, backend latency.
+* Client console logs gated behind a `DEBUG_RECORDING` flag.
 
-* Keep `pyproject.toml` and add optional extras:
+# Deliverables
 
-  * `ui-gtk`: `["PyGObject", "portaudio"]`
-  * `ui-web`: `["flask", "python-dotenv"]`
-* CLI scripts:
+* PR with the code changes listed above.
+* A short `README_recording.md` explaining the flow and how to run a local test.
+* A 2-minute screen capture showing the happy path.
 
-  * `bin/dictaite` → launches GTK UI.
-  * `bin/dictaite-web` → `FLASK_ENV=production python -m ui_web.app` with `--host 0.0.0.0 --port 5000`.
+# Step-by-Step Plan (execute in order)
 
-### MIME and formats
+1. Inspect GTK client code to find **exact** backend call used for file transcription and translation. Extract the minimal reusable wrapper.
+2. Implement Flask endpoints for start, append, finalize, cancel, with simple file append logic keyed by `session_id`.
+3. Implement `record.js` with `MediaRecorder` and chunk posts. Add state machine, timer, and button toggling.
+4. Wire UI elements and minimal styles. Verify a11y.
+5. End-to-end test. Fix MIME or format conversion on the **Flask side** if the backend needs WAV or PCM.
+6. Add logs, README, and the demo recording.
 
-* Prefer WAV PCM 16-bit server-side for Whisper accuracy. If MediaRecorder yields `webm/ogg`, transcode to WAV using `pydub` or `soundfile`. Keep it minimal.
-
-### Errors
-
-* Standard JSON error schema: `{ "error": { "code": "...", "message": "..." } }` with proper HTTP codes.
-
-### Tests
-
-* Unit tests for `transcribe()` and `translate()` using short fixtures.
-* API test: `POST /api/transcribe` with a tiny WAV fixture.
-* Lightweight Playwright or pytest-playwright smoke for recording controls is a plus; otherwise document manual steps.
-
----
-
-## 5) Definition of Done
-
-* GTK app runs unchanged in behavior, now importing only `dictaite_core`.
-* Flask app runs with `bin/dictaite-web`, serves `index.html` and `settings.html`, and mirrors the GTK layout and features shown in the two images.
-* Browser recording, playback, transcription and optional translation all work end-to-end.
-* Users can copy and download transcripts.
-* Settings persist for the session; if feasible, save to a small JSON in `~/.dictaite/settings.json`, else use localStorage and document it.
-* `ARCHITECTURE.md` explains layers, contracts, and how to add future UIs.
-* `WEBUI.md` explains how to run the Flask app and browser permissions.
-* Lint passes; tests green.
-
----
-
-## 6) Migration notes for the agent to generate
-
-* Move current business logic into `dictaite_core`.
-* Replace any blocking I/O in services with async if trivial; otherwise keep sync and run in threadpool on the web side.
-* Keep public service function signatures stable and documented.
-* Add minimal logging with `logging` module.
-
----
-
-## 7) Out of scope
-
-* Heavy frontend frameworks.
-* Multi-user auth.
-* Cloud deployment scripts beyond a simple `gunicorn` note in `WEBUI.md`.
-
----
-
-**Execute the refactor and web UI creation as above. Produce code, tests, and docs. Keep the UI texts and control order identical to the GTK app unless infeasible in the browser.**

@@ -1,7 +1,7 @@
 [project]
 name = "dict-ait-e"
 version = "0.1.0"
-description = "Add your description here"
+description = "Voice transcription with interchangeable UIs"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,5 +10,15 @@ dependencies = [
     "soundfile",
     "openai>=1",
     "python-dotenv",
-    "PyGObject",
+    "flask",
+    "pydub",
+    "pytest",
 ]
+
+[project.optional-dependencies]
+ui-gtk = ["PyGObject"]
+ui-web = ["flask", "python-dotenv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

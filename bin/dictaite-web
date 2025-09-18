@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Launch the Flask web UI for dict-ai-te.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR/.."
+
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
+fi
+
+cd "$PROJECT_ROOT" || exit 1
+
+FLASK_ENV=production uv run -m dictaite.ui_web.app --host 0.0.0.0 --port 8080 "$@"
