@@ -26,7 +26,7 @@ def translate(text: str, target_lang: str) -> str:
     if not text.strip():
         return ""
 
-    client = get_openai_client()
+    client = translate.get_openai_client()
     prompt = CHAT_PROMPT_TEMPLATE.format(target=target_lang, text=text)
     response = client.chat.completions.create(
         model=TRANSLATE_MODEL,
@@ -37,6 +37,9 @@ def translate(text: str, target_lang: str) -> str:
     content = getattr(choice.message, "content", None) or ""
     LOGGER.debug("Received translation response (%d tokens)", getattr(choice, "index", -1))
     return format_structured_text(content)
+
+
+translate.get_openai_client = get_openai_client  # type: ignore[attr-defined]
 
 
 __all__ = ["translate"]

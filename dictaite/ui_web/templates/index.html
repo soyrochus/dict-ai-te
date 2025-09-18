@@ -28,31 +28,52 @@
             <div id="levelMeter" class="h-full w-0 bg-emerald-400"></div>
           </div>
           <button
-            id="recordButton"
+            id="recordBtn"
             type="button"
-            class="flex h-32 w-32 items-center justify-center rounded-full bg-emerald-500 transition hover:bg-emerald-400"
+            class="flex h-32 w-32 items-center justify-center rounded-full bg-emerald-500 text-center text-lg font-semibold transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            aria-pressed="false"
           >
-            <span class="sr-only">Toggle recording</span>
-            <svg
-              id="recordIcon"
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-16 w-16"
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path d="M10 4a3 3 0 0 0-3 3v4a3 3 0 1 0 6 0V7a3 3 0 0 0-3-3z" />
-              <path
-                d="M5 9a5 5 0 0 0 10 0h1a6 6 0 0 1-5 5.917V18h-2v-3.083A6 6 0 0 1 4 9h1z"
-              />
-            </svg>
+            <span id="recordBtnText">Toggle Recording</span>
           </button>
-          <p id="statusLabel" class="text-sm text-slate-300">
-            Press to start recording
-          </p>
-          <p id="timerLabel" class="text-2xl font-mono">00:00:00</p>
+          <p id="recordCaption" class="text-sm text-slate-300" aria-live="polite">Ready</p>
+          <p id="recordTimer" class="text-2xl font-mono">00:00</p>
+          <p id="recordStatus" class="text-sm text-slate-400" aria-live="polite" role="status"></p>
+          <div class="flex gap-3" aria-live="polite">
+            <button
+              id="recordRetryBtn"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              hidden
+            >
+              Retry
+            </button>
+            <button
+              id="recordCancelBtn"
+              type="button"
+              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              hidden
+            >
+              Cancel
+            </button>
+          </div>
         </section>
 
         <section class="space-y-4">
+          <div>
+            <label for="modeSelect" class="block text-sm font-medium">Mode</label>
+            <select
+              id="modeSelect"
+              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+            >
+              <option value="transcribe" {% if not settings.translate_by_default %}selected{% endif %}>
+                Transcribe
+              </option>
+              <option value="translate" {% if settings.translate_by_default %}selected{% endif %}>
+                Translate
+              </option>
+            </select>
+          </div>
+
           <div>
             <label for="languageSelect" class="block text-sm font-medium">Origin language</label>
             <select
@@ -65,22 +86,6 @@
               </option>
               {% endfor %}
             </select>
-          </div>
-
-          <div class="flex items-center justify-between">
-            <label class="text-sm font-medium" for="translateToggle">Translate to</label>
-            <button
-              id="translateToggle"
-              type="button"
-              class="relative inline-flex h-6 w-11 items-center rounded-full border border-slate-600"
-              data-active="{{ 'true' if settings.translate_by_default else 'false' }}"
-            >
-              <span class="sr-only">Toggle translation</span>
-              <span
-                id="translateThumb"
-                class="inline-block h-5 w-5 transform rounded-full bg-slate-300 transition"
-              ></span>
-            </button>
           </div>
 
           <div id="targetContainer" class="transition-all" {% if not settings.translate_by_default %}hidden{% endif %}>
@@ -155,7 +160,8 @@
 
       <footer class="mt-8 text-xs text-slate-500">
         <p>
-          Space: start/stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S: download transcript
+          Space: start/stop recording · Esc: stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S:
+          download transcript
         </p>
       </footer>
     </div>
@@ -165,12 +171,15 @@
     <script>
       window.dictaiteConfig = {
         settingsUrl: "{{ url_for('api.api_get_settings') }}",
-        transcribeUrl: "{{ url_for('api.api_transcribe') }}",
         ttsUrl: "{{ url_for('api.api_tts_test') }}",
         updateSettingsUrl: "{{ url_for('api.api_update_settings') }}",
-        defaultTranslate: {{ 'true' if settings.translate_by_default else 'false' }},
+        recordStartUrl: "{{ url_for('api.api_record_start') }}",
+        recordAppendUrl: "{{ url_for('api.api_record_append') }}",
+        recordFinalizeUrl: "{{ url_for('api.api_record_finalize') }}",
+        recordCancelUrl: "{{ url_for('api.api_record_cancel') }}",
       };
     </script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/record.js') }}"></script>
   </body>
 </html>
