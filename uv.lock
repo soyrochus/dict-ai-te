@@ -106,36 +106,25 @@ dependencies = [
     { name = "numpy" },
     { name = "openai" },
     { name = "pydub" },
+    { name = "pygobject" },
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "sounddevice" },
     { name = "soundfile" },
-]
-
-[package.optional-dependencies]
-ui-gtk = [
-    { name = "pygobject" },
-]
-ui-web = [
-    { name = "flask" },
-    { name = "python-dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "flask" },
-    { name = "flask", marker = "extra == 'ui-web'" },
     { name = "numpy" },
     { name = "openai", specifier = ">=1" },
     { name = "pydub" },
-    { name = "pygobject", marker = "extra == 'ui-gtk'" },
+    { name = "pygobject" },
     { name = "pytest" },
     { name = "python-dotenv" },
-    { name = "python-dotenv", marker = "extra == 'ui-web'" },
     { name = "sounddevice" },
     { name = "soundfile" },
 ]
-provides-extras = ["ui-gtk", "ui-web"]
 
 [[package]]
 name = "distro"

@@ -13,11 +13,8 @@ dependencies = [
     "flask",
     "pydub",
     "pytest",
+    "PyGObject"
 ]
-
-[project.optional-dependencies]
-ui-gtk = ["PyGObject"]
-ui-web = ["flask", "python-dotenv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
