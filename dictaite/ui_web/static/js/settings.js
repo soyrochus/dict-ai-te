@@ -29,6 +29,7 @@
     if (!elements.translateToggle || !elements.targetGroup) return;
     elements.translateToggle.dataset.active = active ? 'true' : 'false';
     elements.targetGroup.toggleAttribute('hidden', !active);
+    elements.defaultTarget?.toggleAttribute('disabled', !active);
   }
 
   async function previewVoice(kind) {

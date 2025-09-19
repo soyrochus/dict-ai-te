@@ -50,6 +50,8 @@
     state.mode = getSelectedMode();
     state.targetLang = state.mode === 'translate' ? getSelectedTargetLang() : null;
     setControlsDisabled(false);
+    updateTargetVisibility(state.mode === 'translate');
+    toggleTargetContainer(state.mode === 'translate');
     elements.recordBtn.addEventListener('click', handleToggleRecording);
     elements.recordBtn.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -613,6 +615,9 @@
     state.targetLang = state.mode === 'translate' ? getSelectedTargetLang() : null;
     const disableControls = state.current === 'recording' || state.current === 'uploading' || state.current === 'processing';
     setControlsDisabled(disableControls);
+    const active = state.mode === 'translate';
+    updateTargetVisibility(active);
+    toggleTargetContainer(active);
   }
 
   function updateStatus(message, isError = false) {
@@ -632,6 +637,24 @@
     if (elements.targetSelect) {
       elements.targetSelect.disabled = disabled || state.mode !== 'translate';
     }
+  }
+
+  function updateTargetVisibility(active) {
+    if (!elements.targetSelect) {
+      return;
+    }
+    if (active) {
+      elements.targetSelect.removeAttribute('disabled');
+    } else {
+      elements.targetSelect.setAttribute('disabled', 'true');
+    }
+  }
+
+  function toggleTargetContainer(active) {
+    if (!elements.targetContainer) {
+      return;
+    }
+    elements.targetContainer.toggleAttribute('hidden', !active);
   }
 
   init();

@@ -10,60 +10,67 @@
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
   </head>
-  <body class="min-h-screen bg-slate-900 text-slate-100">
-    <div class="mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-8">
-      <header class="mb-8 flex items-center justify-between">
-        <h1 class="text-3xl font-semibold">dict-ai-te</h1>
-        <a
-          href="{{ url_for('pages.settings_page') }}"
-          class="rounded border border-slate-500 px-4 py-2 text-sm font-medium hover:bg-slate-800"
-        >
-          Settings
-        </a>
-      </header>
+  <body class="bg-gray-50 text-gray-800">
+    <div class="relative flex min-h-screen flex-col items-center justify-start p-6">
+      <a
+        href="{{ url_for('pages.settings_page') }}"
+        class="absolute top-4 right-4 px-3 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+      >
+        Settings
+      </a>
 
-      <main class="flex flex-1 flex-col space-y-8">
-        <section class="flex flex-col items-center space-y-4">
-          <div class="h-2 w-full overflow-hidden rounded bg-slate-800">
-            <div id="levelMeter" class="h-full w-0 bg-emerald-400"></div>
+      <div class="w-full max-w-3xl space-y-6 rounded-xl bg-white p-6 shadow-lg">
+        <header class="flex flex-col items-center space-y-2">
+          <h1 class="text-2xl font-semibold">dict-ai-te</h1>
+          <p class="text-sm text-gray-600">Capture speech, transcribe, and translate in one click.</p>
+        </header>
+
+        <section class="space-y-4">
+          <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+            <div id="levelMeter" class="h-full w-0 bg-blue-500 transition-all"></div>
           </div>
-          <button
-            id="recordBtn"
-            type="button"
-            class="flex h-32 w-32 items-center justify-center rounded-full bg-emerald-500 text-center text-lg font-semibold transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-            aria-pressed="false"
-          >
-            <span id="recordBtnText">Toggle Recording</span>
-          </button>
-          <p id="recordCaption" class="text-sm text-slate-300" aria-live="polite">Ready</p>
-          <p id="recordTimer" class="text-2xl font-mono">00:00</p>
-          <p id="recordStatus" class="text-sm text-slate-400" aria-live="polite" role="status"></p>
-          <div class="flex gap-3" aria-live="polite">
-            <button
-              id="recordRetryBtn"
-              type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
-              hidden
-            >
-              Retry
-            </button>
-            <button
-              id="recordCancelBtn"
-              type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
-              hidden
-            >
-              Cancel
-            </button>
+
+          <div class="flex flex-col items-center space-y-3">
+            <div class="flex w-full items-center justify-center rounded-xl bg-gray-100 p-6 shadow-inner">
+              <button
+                id="recordBtn"
+                type="button"
+                class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                aria-pressed="false"
+              >
+                <span id="recordBtnText">Toggle Recording</span>
+              </button>
+            </div>
+            <p id="recordCaption" class="text-gray-600 text-center" aria-live="polite">Ready</p>
+            <p id="recordTimer" class="font-mono text-lg text-gray-700">00:00</p>
+            <p id="recordStatus" class="text-sm text-gray-500" aria-live="polite" role="status"></p>
+            <div class="flex items-center space-x-2" aria-live="polite">
+              <button
+                id="recordRetryBtn"
+                type="button"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                hidden
+              >
+                Retry
+              </button>
+              <button
+                id="recordCancelBtn"
+                type="button"
+                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                hidden
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </section>
 
         <section class="space-y-4">
           <div>
-            <label for="modeSelect" class="block text-sm font-medium">Mode</label>
+            <label for="modeSelect" class="block text-sm font-medium text-gray-700">Mode</label>
             <select
               id="modeSelect"
-              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+              class="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               <option value="transcribe" {% if not settings.translate_by_default %}selected{% endif %}>
                 Transcribe
@@ -75,10 +82,10 @@
           </div>
 
           <div>
-            <label for="languageSelect" class="block text-sm font-medium">Origin language</label>
+            <label for="languageSelect" class="block text-sm font-medium text-gray-700">Origin language</label>
             <select
               id="languageSelect"
-              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+              class="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
             >
               {% for lang in languages %}
               <option value="{{ lang.code }}" {% if settings.default_language == lang.code %}selected{% endif %}>
@@ -88,11 +95,11 @@
             </select>
           </div>
 
-          <div id="targetContainer" class="transition-all" {% if not settings.translate_by_default %}hidden{% endif %}>
-            <label for="targetSelect" class="block text-sm font-medium">Destination language</label>
+          <div id="targetContainer" class="space-y-2" {% if not settings.translate_by_default %}hidden{% endif %}>
+            <label for="targetSelect" class="block text-sm font-medium text-gray-700">Destination language</label>
             <select
               id="targetSelect"
-              class="mt-1 w-full rounded border border-slate-700 bg-slate-800 p-2"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {% for lang in target_languages %}
               <option value="{{ lang.code }}" {% if settings.default_target_language == lang.code %}selected{% endif %}>
@@ -103,67 +110,64 @@
           </div>
         </section>
 
-        <section class="flex-1">
-          <label for="transcript" class="mb-2 block text-sm font-medium">Transcript</label>
+        <section>
+          <label for="transcript" class="text-sm font-medium text-gray-700">Transcript</label>
           <textarea
             id="transcript"
-            class="h-64 w-full rounded border border-slate-700 bg-slate-900 p-3 font-mono"
+            class="mt-2 w-full h-48 border border-gray-300 rounded-lg p-3 bg-gray-50 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
             placeholder="Transcript will appear here..."
           ></textarea>
         </section>
 
-        <section class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div class="flex gap-3">
+        <section class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div class="flex items-center space-x-2">
             <button
               id="downloadButton"
               type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
             >
               Download
             </button>
             <button
               id="copyButton"
               type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
             >
               Copy
             </button>
             <button
               id="clearButton"
               type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
             >
               Clear
             </button>
             <button
               id="playButton"
               type="button"
-              class="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800"
+              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
             >
               Play
             </button>
           </div>
 
-          <div class="flex items-center gap-4">
-            <span class="text-sm font-medium">Record voice</span>
-            <label class="inline-flex items-center gap-2 text-sm">
+          <div class="flex items-center space-x-4 text-sm text-gray-700">
+            <span class="font-medium">Record voice</span>
+            <label class="inline-flex items-center space-x-2">
               <input type="radio" name="voiceGender" value="female" checked />
-              Female
+              <span>Female</span>
             </label>
-            <label class="inline-flex items-center gap-2 text-sm">
+            <label class="inline-flex items-center space-x-2">
               <input type="radio" name="voiceGender" value="male" />
-              Male
+              <span>Male</span>
             </label>
           </div>
         </section>
-      </main>
 
-      <footer class="mt-8 text-xs text-slate-500">
-        <p>
-          Space: start/stop recording · Esc: stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S:
-          download transcript
-        </p>
-      </footer>
+        <footer class="text-xs text-gray-500">
+          Space: start/stop recording · Esc: stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S: download transcript
+        </footer>
+      </div>
     </div>
 
     <audio id="playback" class="hidden"></audio>
