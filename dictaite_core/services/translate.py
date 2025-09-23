@@ -11,7 +11,9 @@ from .text_utils import format_structured_text
 LOGGER = logging.getLogger(__name__)
 
 TRANSLATE_MODEL: Final[str] = "gpt-5-mini-2025-08-07"
-CHAT_TEMPERATURE: Final[float] = 0.2
+# Some newer chat models only support the default temperature (1.0).
+# Keep the model unchanged and avoid sending a non-default temperature.
+CHAT_TEMPERATURE: Final[float] = 1.0
 CHAT_PROMPT_TEMPLATE: Final[str] = (
     "Translate the following text to {target}. "
     "Format the translation into clear paragraphs separated by blank lines. "
@@ -26,12 +28,17 @@ def translate(text: str, target_lang: str) -> str:
     if not text.strip():
         return ""
 
-    client = translate.get_openai_client()
+    client = translate.get_openai_client()  # type: ignore[attr-defined]
     prompt = CHAT_PROMPT_TEMPLATE.format(target=target_lang, text=text)
+    kwargs = {}
+    # Only include temperature when it's not the default; some models reject non-default values.
+    if CHAT_TEMPERATURE is not None and CHAT_TEMPERATURE != 1.0:
+        kwargs["temperature"] = CHAT_TEMPERATURE
+
     response = client.chat.completions.create(
         model=TRANSLATE_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=CHAT_TEMPERATURE,
+        **kwargs,
     )
     choice = response.choices[0]
     content = getattr(choice.message, "content", None) or ""

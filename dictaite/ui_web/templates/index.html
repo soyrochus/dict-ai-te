@@ -4,167 +4,160 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>dict-ai-te</title>
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.4/dist/tailwind.min.css"
-    />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
   </head>
-  <body class="bg-gray-50 text-gray-800">
-    <div class="relative flex min-h-screen flex-col items-center justify-start p-6">
-      <a
-        href="{{ url_for('pages.settings_page') }}"
-        class="absolute top-4 right-4 px-3 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-      >
-        Settings
-      </a>
+  <body class="bg-slate-50 text-slate-800">
+    <!-- Top bar -->
+    <header class="sticky top-0 z-10 w-full border-b border-slate-200 bg-white/80 backdrop-blur">
+      <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div class="flex items-center gap-3">
+          <!-- Logo placeholder -->
+          <span class="inline-flex h-6 w-6 items-center justify-center rounded bg-sky-600 text-white">D</span>
+          <span class="text-lg font-semibold tracking-tight">dict-ai-te</span>
+        </div>
+        <nav>
+          <a
+            href="{{ url_for('pages.settings_page') }}"
+            class="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4">
+              <path d="M11.983 13.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/>
+              <path fill-rule="evenodd" d="M19.436 12.944a7.545 7.545 0 0 0 .05-.944 7.545 7.545 0 0 0-.05-.944l2.11-1.65a.75.75 0 0 0 .18-.957l-2-3.464a.75.75 0 0 0-.906-.332l-2.487 1a7.577 7.577 0 0 0-1.635-.944l-.377-2.63A.75.75 0 0 0 13.5 1.5h-4a.75.75 0 0 0-.742.65l-.377 2.63a7.577 7.577 0 0 0-1.635.944l-2.487-1a.75.75 0 0 0-.906.332l-2 3.464a.75.75 0 0 0 .18.957l2.11 1.65c-.034.31-.05.63-.05.944 0 .315.016.635.05.944l-2.11 1.65a.75.75 0 0 0-.18.957l2 3.464a.75.75 0 0 0 .906.332l2.487-1c.5.39 1.045.716 1.635.944l.377 2.63a.75.75 0 0 0 .742.65h4a.75.75 0 0 0 .742-.65l.377-2.63a7.577 7.577 0 0 0 1.635-.944l2.487 1a.75.75 0 0 0 .906-.332l2-3.464a.75.75 0 0 0-.18-.957l-2.11-1.65ZM9.5 12a2.5 2.5 0 1 0 5.001 0A2.5 2.5 0 0 0 9.5 12Z" clip-rule="evenodd"/>
+            </svg>
+            <span>Settings</span>
+          </a>
+        </nav>
+      </div>
+    </header>
 
-      <div class="w-full max-w-3xl space-y-6 rounded-xl bg-white p-6 shadow-lg">
-        <header class="flex flex-col items-center space-y-2">
-          <h1 class="text-2xl font-semibold">dict-ai-te</h1>
-          <p class="text-sm text-gray-600">Capture speech, transcribe, and translate in one click.</p>
-        </header>
+    <!-- Main content -->
+    <div class="relative mx-auto flex min-h-[calc(100vh-56px)] max-w-5xl flex-col items-center justify-start gap-6 px-4 py-6">
+      <div class="w-full rounded-2xl bg-white p-6 shadow-xl ring-1 ring-slate-200">
+        <div class="grid gap-8 md:grid-cols-2">
+          <!-- Left: recorder + status -->
+          <section class="flex flex-col items-center justify-center gap-4">
+            <!-- Level meter -->
+            <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+              <div id="levelMeter" class="h-full w-0 bg-gradient-to-r from-sky-400 to-blue-600 transition-[width]"></div>
+            </div>
 
-        <section class="space-y-4">
-          <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-            <div id="levelMeter" class="h-full w-0 bg-blue-500 transition-all"></div>
-          </div>
-
-          <div class="flex flex-col items-center space-y-3">
-            <div class="flex w-full items-center justify-center rounded-xl bg-gray-100 p-6 shadow-inner">
+            <!-- Record button card -->
+            <div class="flex w-full items-center justify-center rounded-xl bg-slate-50 p-8 ring-1 ring-inset ring-slate-200">
               <button
                 id="recordBtn"
                 type="button"
-                class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                class="group relative grid h-40 w-40 place-items-center rounded-full bg-sky-600 text-white shadow-lg ring-1 ring-sky-700/30 transition hover:bg-sky-700 focus:outline-none focus-visible:ring-4 focus-visible:ring-sky-400"
                 aria-pressed="false"
               >
-                <span id="recordBtnText">Toggle Recording</span>
+                <!-- Mic icon -->
+                <svg class="icon-mic h-12 w-12 opacity-90" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z"/>
+                  <path d="M5 11a1 1 0 1 0-2 0 9 9 0 0 0 8 8v3H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-3a9 9 0 0 0 8-8 1 1 0 1 0-2 0 7 7 0 1 1-14 0Z"/>
+                </svg>
+                <!-- Stop icon -->
+                <svg class="icon-stop h-12 w-12 opacity-90" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="2"/>
+                </svg>
+                <!-- Spinner -->
+                <svg class="icon-spinner h-10 w-10 animate-spin text-white/90" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                  <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z"/>
+                </svg>
+                <span id="recordBtnText" class="sr-only">Toggle Recording</span>
               </button>
             </div>
-            <p id="recordCaption" class="text-gray-600 text-center" aria-live="polite">Ready</p>
-            <p id="recordTimer" class="font-mono text-lg text-gray-700">00:00</p>
-            <p id="recordStatus" class="text-sm text-gray-500" aria-live="polite" role="status"></p>
-            <div class="flex items-center space-x-2" aria-live="polite">
-              <button
-                id="recordRetryBtn"
-                type="button"
-                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-                hidden
-              >
-                Retry
-              </button>
-              <button
-                id="recordCancelBtn"
-                type="button"
-                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
-                hidden
-              >
-                Cancel
-              </button>
+
+            <div class="flex flex-col items-center gap-1">
+              <p id="recordCaption" class="text-sm text-slate-600" aria-live="polite">Ready</p>
+              <p id="recordTimer" class="font-mono text-2xl tabular-nums text-slate-800">00:00</p>
+              <p id="recordStatus" class="text-xs text-slate-500" aria-live="polite" role="status"></p>
+              <div class="mt-2 flex items-center gap-2" aria-live="polite">
+                <button
+                  id="recordRetryBtn"
+                  type="button"
+                  class="rounded-lg bg-amber-100 px-3 py-1.5 text-amber-800 ring-1 ring-inset ring-amber-200 hover:bg-amber-200 transition"
+                  hidden
+                >
+                  Retry
+                </button>
+                <button
+                  id="recordCancelBtn"
+                  type="button"
+                  class="rounded-lg bg-rose-100 px-3 py-1.5 text-rose-800 ring-1 ring-inset ring-rose-200 hover:bg-rose-200 transition"
+                  hidden
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="space-y-4">
-          <div>
-            <label for="modeSelect" class="block text-sm font-medium text-gray-700">Mode</label>
-            <select
-              id="modeSelect"
-              class="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              <option value="transcribe" {% if not settings.translate_by_default %}selected{% endif %}>
-                Transcribe
-              </option>
-              <option value="translate" {% if settings.translate_by_default %}selected{% endif %}>
-                Translate
-              </option>
-            </select>
-          </div>
+          <!-- Right: options + transcript controls -->
+          <section class="flex flex-col gap-4">
+            <div class="grid grid-cols-1 gap-4">
+              <div>
+                <label for="modeSelect" class="block text-sm font-medium text-slate-700">Mode</label>
+                <select
+                  id="modeSelect"
+                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  <option value="transcribe" {% if not settings.translate_by_default %}selected{% endif %}>Transcribe</option>
+                  <option value="translate" {% if settings.translate_by_default %}selected{% endif %}>Translate</option>
+                </select>
+              </div>
 
-          <div>
-            <label for="languageSelect" class="block text-sm font-medium text-gray-700">Origin language</label>
-            <select
-              id="languageSelect"
-              class="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            >
-              {% for lang in languages %}
-              <option value="{{ lang.code }}" {% if settings.default_language == lang.code %}selected{% endif %}>
-                {{ lang.name }}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
+              <div>
+                <label for="languageSelect" class="block text-sm font-medium text-slate-700">Origin language</label>
+                <select
+                  id="languageSelect"
+                  class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                >
+                  {% for lang in languages %}
+                  <option value="{{ lang.code }}" {% if settings.default_language == lang.code %}selected{% endif %}>{{ lang.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
 
-          <div id="targetContainer" class="space-y-2" {% if not settings.translate_by_default %}hidden{% endif %}>
-            <label for="targetSelect" class="block text-sm font-medium text-gray-700">Destination language</label>
-            <select
-              id="targetSelect"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {% for lang in target_languages %}
-              <option value="{{ lang.code }}" {% if settings.default_target_language == lang.code %}selected{% endif %}>
-                {{ lang.name }}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
-        </section>
+              <div id="targetContainer" class="space-y-1" {% if not settings.translate_by_default %}hidden{% endif %}>
+                <label for="targetSelect" class="block text-sm font-medium text-slate-700">Destination language</label>
+                <select
+                  id="targetSelect"
+                  class="w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {% for lang in target_languages %}
+                  <option value="{{ lang.code }}" {% if settings.default_target_language == lang.code %}selected{% endif %}>{{ lang.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
 
-        <section>
-          <label for="transcript" class="text-sm font-medium text-gray-700">Transcript</label>
-          <textarea
-            id="transcript"
-            class="mt-2 w-full h-48 border border-gray-300 rounded-lg p-3 bg-gray-50 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            placeholder="Transcript will appear here..."
-          ></textarea>
-        </section>
+            <div class="flex-1">
+              <label for="transcript" class="text-sm font-medium text-slate-700">Transcript</label>
+              <textarea
+                id="transcript"
+                class="mt-2 h-56 w-full resize-none rounded-lg border border-slate-300 bg-slate-50 p-3 shadow-inner focus:outline-none focus:ring-2 focus:ring-sky-500"
+                placeholder="Transcript will appear here..."
+              ></textarea>
+            </div>
 
-        <section class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div class="flex items-center space-x-2">
-            <button
-              id="downloadButton"
-              type="button"
-              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-            >
-              Download
-            </button>
-            <button
-              id="copyButton"
-              type="button"
-              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-            >
-              Copy
-            </button>
-            <button
-              id="clearButton"
-              type="button"
-              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-            >
-              Clear
-            </button>
-            <button
-              id="playButton"
-              type="button"
-              class="p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
-            >
-              Play
-            </button>
-          </div>
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div class="flex items-center gap-2">
+                <button id="downloadButton" type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-200">Download</button>
+                <button id="copyButton" type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-200">Copy</button>
+                <button id="clearButton" type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-200">Clear</button>
+                <button id="playButton" type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 ring-1 ring-inset ring-slate-200 hover:bg-slate-200">Play</button>
+              </div>
+              <div class="flex items-center gap-4 text-sm text-slate-700">
+                <span class="font-medium">Record voice</span>
+                <label class="inline-flex items-center gap-2"><input type="radio" name="voiceGender" value="female" checked /> <span>Female</span></label>
+                <label class="inline-flex items-center gap-2"><input type="radio" name="voiceGender" value="male" /> <span>Male</span></label>
+              </div>
+            </div>
+          </section>
+        </div>
 
-          <div class="flex items-center space-x-4 text-sm text-gray-700">
-            <span class="font-medium">Record voice</span>
-            <label class="inline-flex items-center space-x-2">
-              <input type="radio" name="voiceGender" value="female" checked />
-              <span>Female</span>
-            </label>
-            <label class="inline-flex items-center space-x-2">
-              <input type="radio" name="voiceGender" value="male" />
-              <span>Male</span>
-            </label>
-          </div>
-        </section>
-
-        <footer class="text-xs text-gray-500">
+        <footer class="mt-6 text-xs text-slate-500">
           Space: start/stop recording · Esc: stop recording · Ctrl/Cmd+C: copy transcript · Ctrl/Cmd+S: download transcript
         </footer>
       </div>

@@ -2,34 +2,60 @@ body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* Record button visual states */
+#recordBtn {
+  position: relative;
+}
+#recordBtn .icon-stop,
+#recordBtn .icon-spinner {
+  display: none;
+}
 #recordBtn[data-state="recording"] {
-  background-color: #dc2626;
+  background-color: #dc2626; /* red-600 */
+}
+#recordBtn[data-state="recording"] .icon-mic { display: none; }
+#recordBtn[data-state="recording"] .icon-stop { display: block; }
+
+#recordBtn[data-state="uploading"],
+#recordBtn[data-state="processing"],
+#recordBtn[data-state="preparing"] {
+  background-color: #0369a1; /* sky-700 */
+}
+#recordBtn[data-state="uploading"] .icon-mic,
+#recordBtn[data-state="uploading"] .icon-stop,
+#recordBtn[data-state="processing"] .icon-mic,
+#recordBtn[data-state="processing"] .icon-stop,
+#recordBtn[data-state="preparing"] .icon-mic,
+#recordBtn[data-state="preparing"] .icon-stop {
+  display: none;
+}
+#recordBtn[data-state="uploading"] .icon-spinner,
+#recordBtn[data-state="processing"] .icon-spinner,
+#recordBtn[data-state="preparing"] .icon-spinner {
+  display: block;
 }
 
-#recordBtn[data-state="recording"]:hover {
-  background-color: #b91c1c;
+#recordBtn[data-state="error"] {
+  background-color: #b45309; /* amber-600 */
 }
 
 textarea:focus,
 select:focus,
 button:focus {
-  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline: 2px solid rgba(56, 189, 248, 0.6); /* sky-400 */
   outline-offset: 2px;
 }
 
 #translateDefault[data-active="true"] {
-  background-color: #2563eb;
+  background-color: #2563eb; /* blue-600 */
 }
-
 #translateDefault span {
   transform: translateX(0.25rem);
   background-color: #ffffff;
 }
-
 #translateDefault[data-active="true"] span {
   transform: translateX(1.25rem);
 }
-
 #translateDefault[data-active="false"] span {
   transform: translateX(0.25rem);
 }

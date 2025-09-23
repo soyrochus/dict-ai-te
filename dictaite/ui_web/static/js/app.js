@@ -40,8 +40,9 @@
 
   function updateTargetVisibility(active) {
     if (!elements.targetContainer) {
-      return;
+      elements.targetContainer = document.getElementById('targetContainer'); // ensure reference exists after DOM changes
     }
+    if (!elements.targetContainer) return;
     elements.targetContainer.toggleAttribute('hidden', !active);
   }
 
