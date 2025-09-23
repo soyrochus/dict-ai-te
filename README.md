@@ -1,47 +1,41 @@
 # dict-ai-te
 
-**dict-ai-te** is a minimalist desktop application for recording voice notes, transcribing them to text (via the OpenAI API) and with optional translation to a specified target lanuage. Generated transcripts can be saved to files.
+**dict-ai-te** lets you record voice notes, transcribe them (via the OpenAI API), and optionally translate to a target language. Use it in two ways:
 
-The app is designed for simplicity, with a clean UI inspired by modern voice recorders. It’s built using Python and GTK 4 via PyGObject for modern Linux desktop integration.
+- A native desktop app with GTK 4 (Linux/macOS)
+- A browser-based Web UI powered by Flask
 
-<table>
-  <tr>
-    <td align="center">
-      <img src="img/dict-ai-te-ubuntu.png" width="400"/>
-    </td>
-    <td align="center">
-      <img src="img/dict-ai-te-mac.png" width="400"/>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      Ubuntu
-    </td>
-    <td align="center">
-      MacOS
-    </td>
-  </tr>
-</table>
+Both experiences share the same engine and settings.
+
+
+| Ubuntu | macOS |
+| :----: | :---: |
+| ![dict-ai-te on Ubuntu](img/dict-ai-te-ubuntu.png) | ![dict-ai-te on macOS](img/dict-ai-te-mac.png) |
+
+| Web browser |
+| :----:  |
+| ![dict-ai-te on Web](img/dict-ai-te-web.png) |
 
 ## Features
 
-* Record audio notes directly from your microphone.
-* See real-time status and elapsed recording time.
-* Real-time audio level bar during recording.
-* Automatic transcription using the OpenAI Whisper API.
-* Edit or correct transcribed text in the main window.
-* Optional translation to selected language
-* Save transcripts as plain text files.
-* Copy transcripts to your clipboard with a single click.
-* Simple configuration using `.env` or environment variables for the OpenAI API key.
+- Record audio notes directly from your microphone (desktop and web).
+- See real-time status and elapsed recording time.
+- Real-time audio level bar during recording.
+- Automatic transcription using the OpenAI Whisper API.
+- Edit or correct transcribed text in the main window.
+- Optional translation to a selected language.
+- Save transcripts as plain text files.
+- Copy transcripts to your clipboard with a single click.
+- Simple configuration using `.env` or environment variables for the OpenAI API key.
+- Consistent settings across the GTK app and Web UI.
 
 ## Installation
 
 **Prerequisites:**
 
-* Python 3.8 or higher (Python 3.12+ recommended)
-* Linux, macOS, or Windows
-* [uv](https://github.com/astral-sh/uv) for fast dependency management
+- Python 3.8 or higher (Python 3.12+ recommended)
+- Linux, macOS, or Windows
+- [uv](https://github.com/astral-sh/uv) for fast dependency management
 
 ### 1. Clone the Repository
 
@@ -82,7 +76,7 @@ sudo apt install -y \
   libportaudio2
  ```
 
-On MacOS, you need to install the dependcies using [Homebrew](https://brew.sh/): 
+On macOS, you need to install the dependencies using [Homebrew](https://brew.sh/):
 
 ```sh
     brew install gtk4 pygobject3 portaudio
@@ -100,7 +94,13 @@ or use the script in the bin directory
 <source dir>>bin/dictaite
 ```
 
-Note that the script needs to have the executable permision set.
+Note that the script needs to have the executable permission set.
+
+You can also run the Web UI in your browser (see the next section for first-time setup):
+
+```bash
+bin/dictaite-web
+```
 
 ### 5. Launch the Web UI
 
@@ -109,7 +109,67 @@ uv sync --extra ui-web
 bin/dictaite-web
 ```
 
-Visit `http://localhost:5000` to use the browser interface. See [WEBUI.md](WEBUI.md) for details.
+Visit `http://localhost:5000` to use the browser interface.
+
+Quick reference:
+
+- GTK desktop app: `bin/dictaite`
+- Web UI (Flask): `bin/dictaite-web`
+
+## Web UI
+
+The Flask interface mirrors the GTK layout using TailwindCSS and vanilla JavaScript. It supports recording, live level metering,
+Whisper transcription, optional translation, text-to-speech previews, download/copy helpers and keyboard shortcuts.
+
+### Web UI prerequisites
+
+- Python 3.12+
+- `ffmpeg` (required by `pydub` to transcode browser recordings to WAV)
+- OpenAI API key exported as `OPENAI_API_KEY` or placed in a `.env`
+
+Install the project and extras:
+
+```bash
+uv sync --extra ui-web
+```
+
+### Running the Web server
+
+Use the convenience script or run the module directly:
+
+```bash
+bin/dictaite-web
+# or
+uv run -m dictaite.ui_web.app --host 0.0.0.0 --port 8080
+```
+
+Navigate to `http://localhost:8080`. The browser will prompt for microphone permissions when you start recording. MediaRecorder
+produces `webm/ogg` blobs which are transcoded to 16 kHz WAV on the server before reaching Whisper.
+
+### API overview
+
+- `POST /api/transcribe` – multipart upload with `audio`, optional `language`, `translate`, `target_lang`. Returns JSON with
+   `text`, `translatedText?`, `durationMs`.
+- `POST /api/tts-test` – JSON `{ gender, text, voice? }`, returns `audio/wav` preview bytes.
+- `POST /api/settings` – JSON payload to persist shared settings; `GET /api/settings` fetches current values.
+- `GET /api/health` – simple readiness probe.
+
+CORS is disabled by default. Enable it via `DICTAITE_ENABLE_CORS=true` and `DICTAITE_CORS_ORIGIN=...` in the Flask configuration
+if embedding in another domain. A placeholder hook (`DICTAITE_RATE_LIMITER`) is left in `app.py` to plug in your preferred rate
+limiter middleware.
+
+### Browser controls
+
+- `Space` – start/stop recording (ignored when the textarea is focused).
+- `Ctrl/Cmd+C` – copy transcript.
+- `Ctrl/Cmd+S` – download transcript as `.txt`.
+
+The Play button synthesizes audio for the current transcript via `/api/tts-test` using the chosen voice gender.
+
+### Settings synchronisation
+
+Settings are stored in `~/.dictaite/settings.json` and shared with the GTK application. The web form uses the same voices and
+language lists defined in `dictaite/ui_common.py`. Use the Play buttons to preview voice choices before saving.
 
 ## Configuration
 
