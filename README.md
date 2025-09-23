@@ -127,11 +127,7 @@ Whisper transcription, optional translation, text-to-speech previews, download/c
 - `ffmpeg` (required by `pydub` to transcode browser recordings to WAV)
 - OpenAI API key exported as `OPENAI_API_KEY` or placed in a `.env`
 
-Install the project and extras:
-
-```bash
-uv sync --extra ui-web
-```
+All dependecies are installed with the desktop application.
 
 ### Running the Web server
 
