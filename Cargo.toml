@@ -1,0 +1,8 @@
+[package]
+name = "dict_ai_te_mock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.27", features = ["wgpu", "x11", "wayland"] }
+egui = "0.27"

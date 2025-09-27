@@ -15,3 +15,6 @@ wheels/
 #OS specific files: MacOS
 .DS_Store
 img/.DS_Store
+
+#Rust specific files/dirs
+target/
