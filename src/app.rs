@@ -143,57 +143,59 @@ impl DictaiteApp {
 
     fn show_record_controls(&mut self, ui: &mut Ui, ctx: &Context) {
         let available_width = ui.available_width();
+        let frame_margin = egui::Margin::same(12.0);
         Frame::group(ui.style())
-            .inner_margin(egui::Margin::same(12.0))
+            .inner_margin(frame_margin)
             .rounding(egui::Rounding::same(8.0))
             .show(ui, |ui| {
-                ui.allocate_ui_with_layout(
-                    Vec2::new(available_width, 180.0),
-                    Layout::top_down(Align::Center),
-                    |ui| {
-                        ui.add_space(8.0);
-                        let button_label = if self.is_recording {
-                            "Stop Recording"
-                        } else {
-                            "Start Recording"
-                        };
-                        let button =
-                            egui::Button::new(RichText::new(button_label).size(18.0).strong())
-                                .min_size(Vec2::new(240.0, 42.0));
-                        if ui.add(button).clicked() {
-                            if self.is_recording {
-                                self.stop_recording();
-                            } else {
-                                self.start_recording();
-                            }
-                            ctx.request_repaint();
-                        }
+                let content_width =
+                    (available_width - frame_margin.left - frame_margin.right).max(0.0);
+                ui.set_width(content_width);
+                ui.add_space(8.0);
 
-                        ui.add_space(10.0);
-                        ui.label(RichText::new(&self.status_text).heading().size(16.0));
-                        if self.is_recording {
-                            let elapsed = self
-                                .record_started_at
-                                .map(|instant| instant.elapsed())
-                                .unwrap_or_else(|| self.recorder.elapsed());
-                            ui.label(RichText::new(time_display(elapsed)).monospace());
-                        } else if let Some(player) = &self.player {
-                            if player.is_playing() {
-                                let elapsed = player.elapsed();
-                                let duration = player.duration();
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{} / {}",
-                                        time_display(elapsed),
-                                        time_display(duration)
-                                    ))
-                                    .monospace(),
-                                );
-                                ctx.request_repaint();
-                            }
-                        }
-                    },
-                );
+                let button_label = if self.is_recording {
+                    "Stop Recording"
+                } else {
+                    "Start Recording"
+                };
+                if ui
+                    .add_sized(
+                        Vec2::new(content_width, 42.0),
+                        egui::Button::new(RichText::new(button_label).size(18.0).strong()),
+                    )
+                    .clicked()
+                {
+                    if self.is_recording {
+                        self.stop_recording();
+                    } else {
+                        self.start_recording();
+                    }
+                    ctx.request_repaint();
+                }
+
+                ui.add_space(10.0);
+                ui.label(RichText::new(&self.status_text).heading().size(16.0));
+                if self.is_recording {
+                    let elapsed = self
+                        .record_started_at
+                        .map(|instant| instant.elapsed())
+                        .unwrap_or_else(|| self.recorder.elapsed());
+                    ui.label(RichText::new(time_display(elapsed)).monospace());
+                } else if let Some(player) = &self.player {
+                    if player.is_playing() {
+                        let elapsed = player.elapsed();
+                        let duration = player.duration();
+                        ui.label(
+                            RichText::new(format!(
+                                "{} / {}",
+                                time_display(elapsed),
+                                time_display(duration)
+                            ))
+                            .monospace(),
+                        );
+                        ctx.request_repaint();
+                    }
+                }
             });
     }
 
@@ -453,22 +455,26 @@ impl App for DictaiteApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let top_button_label = if self.is_recording {
-                "Stop Recording"
-            } else {
-                "Start Recording"
-            };
-            if ui
-                .add(egui::Button::new(top_button_label).min_size(Vec2::new(140.0, 30.0)))
-                .clicked()
-            {
-                if self.is_recording {
-                    self.stop_recording();
-                } else {
-                    self.start_recording();
-                }
-                ctx.request_repaint();
-            }
+            // let top_button_label = if self.is_recording {
+            //     "Stop Recording"
+            // } else {
+            //     "Start Recording"
+            // };
+            // let full_width = ui.available_width();
+            // if ui
+            //     .add_sized(
+            //         Vec2::new(full_width, 32.0),
+            //         egui::Button::new(top_button_label),
+            //     )
+            //     .clicked()
+            // {
+            //     if self.is_recording {
+            //         self.stop_recording();
+            //     } else {
+            //         self.start_recording();
+            //     }
+            //     ctx.request_repaint();
+            // }
 
             ui.add_space(6.0);
             let level = if self.is_recording {
@@ -482,7 +488,7 @@ impl App for DictaiteApp {
             } else {
                 0.0
             };
-            ui.add(egui::widgets::ProgressBar::new(level).desired_width(f32::INFINITY));
+            ui.add(egui::widgets::ProgressBar::new(level).desired_width(ui.available_width()));
 
             ui.add_space(8.0);
             self.show_record_controls(ui, ctx);
@@ -534,12 +540,14 @@ impl App for DictaiteApp {
 
             ui.add_space(10.0);
             ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                let response = egui::TextEdit::multiline(&mut self.transcript)
-                    .hint_text("Transcribed text will appear here…")
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(10)
-                    .show(ui);
-                if response.response.changed() {
+                let width = ui.available_width();
+                ui.set_width(width);
+                let response = ui.add_sized(
+                    Vec2::new(width, ui.spacing().interact_size.y * 10.0),
+                    egui::TextEdit::multiline(&mut self.transcript)
+                        .hint_text("Transcribed text will appear here…"),
+                );
+                if response.changed() {
                     self.raw_transcript = Some(self.transcript.clone());
                 }
             });
