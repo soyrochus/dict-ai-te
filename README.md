@@ -16,9 +16,9 @@ Both experiences share the same engine and settings.
 | :----: | :---: |
 | ![dict-ai-te on Ubuntu](img/dict-ai-te-ubuntu.png) | ![dict-ai-te on macOS](img/dict-ai-te-mac.png) |
 
-| Web browser |
-| :----:  |
-| ![dict-ai-te on Web](img/dict-ai-te-web.png) |
+| Web browser | Rust (multi-os) |
+| :----:      |:---:            |
+| ![dict-ai-te on Web](img/dict-ai-te-web.png) |![dict-ai-te as Rust App](img/dict-ai-te-rust.png) |
 
 ## Features
 
@@ -120,6 +120,72 @@ Quick reference:
 - GTK desktop app: `bin/dictaite`
 - Web UI (Flask): `bin/dictaite-web`
 
+## Rust desktop app (egui/eframe)
+
+There’s also a native Rust version of dict-ai-te. It lives in the Rust crate at the project root (see `Cargo.toml`) with sources under `src/`. It’s built with `eframe`/`egui` (rendered via `wgpu`) and uses:
+
+- `cpal`/`rodio` for audio input/output
+- `rfd` for native file dialogs
+- `arboard` for clipboard
+- `reqwest` for OpenAI HTTP calls (API key from environment or `.env`)
+
+You can run it on Linux, macOS, and Windows. On launch it reads `OPENAI_API_KEY` from your environment or a local `.env` file.
+
+### System Dependencies (Ubuntu 24.04 and newer)
+
+Before building, install the development libraries this project depends on:
+
+```bash
+sudo apt update
+sudo apt install -y \
+   build-essential pkg-config \
+   libssl-dev \
+   libasound2-dev libjack-jackd2-dev \
+   libx11-dev libxi-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+   libxkbcommon-dev libwayland-dev libgl1-mesa-dev libudev-dev \
+   libvulkan1 vulkan-tools mesa-vulkan-drivers libvulkan-dev \
+   libgtk-3-dev \
+   xclip wl-clipboard
+```
+
+#### Why these are needed
+
+- build-essential, pkg-config — compilers, linker, and pkg-config metadata.
+- libssl-dev — required by `openssl-sys` (via `reqwest`).
+- libasound2-dev, libjack-jackd2-dev — required by `alsa-sys` and JACK backend in `cpal`/`rodio`.
+- X11/Wayland/GL stack (libx11-dev … libgl1-mesa-dev …) — required by `eframe`/`egui` with `wgpu`.
+- libudev-dev — device discovery for `wgpu`.
+- libvulkan1, mesa-vulkan-drivers, libvulkan-dev — Vulkan runtime and headers for `wgpu`.
+- libgtk-3-dev — needed by `rfd` for native file dialogs.
+- xclip, wl-clipboard — runtime helpers for `arboard` clipboard integration.
+
+### Build and run
+
+Make sure you have the Rust toolchain installed (via <https://rustup.rs/>). Then:
+
+```bash
+cargo build --release
+```
+
+Run it either via cargo:
+
+```bash
+cargo run --release
+```
+
+…or by launching the built binary directly:
+
+```bash
+./target/release/dict_ai_te_mock
+```
+
+Environment setup (any of the app variants):
+
+```bash
+export OPENAI_API_KEY=your_key_here
+# or create a .env file in the project root with OPENAI_API_KEY=...
+```
+
 ## Web UI
 
 The Flask interface mirrors the GTK layout using TailwindCSS and vanilla JavaScript. It supports recording, live level metering,
@@ -184,6 +250,15 @@ language lists defined in `dictaite/ui_common.py`. Use the Play buttons to previ
    ```bash
    export OPENAI_API_KEY=your_key_here
    ```
+
+
+## Principles of Participation
+
+Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation.  
+Participation is open to all, regardless of background or viewpoint.  
+
+This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md),  
+which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
 
 
 ## License and Copyright
