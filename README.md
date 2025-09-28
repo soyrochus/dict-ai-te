@@ -1,5 +1,9 @@
 # dict-ai-te
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?logo=github)](https://github.com/soyrochus/dict-ai-te)
+[![FOSS Pluralism Manifesto](./badges/foss-pluralism-shield.svg)](./FOSS_PLURALISM_MANIFESTO.md)
+
 **dict-ai-te** lets you record voice notes, transcribe them (via the OpenAI API), and optionally translate to a target language. Use it in two ways:
 
 - A native desktop app with GTK 4 (Linux/macOS)
