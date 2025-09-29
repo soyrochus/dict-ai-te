@@ -1156,7 +1156,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dict_ai_te_mock"
+name = "dict_ai_te"
 version = "0.1.0"
 dependencies = [
  "anyhow",
