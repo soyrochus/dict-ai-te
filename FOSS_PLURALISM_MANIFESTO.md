@@ -1,7 +1,5 @@
 # **The FOSS Pluralism Manifesto**
 
-*(Against CoC-as-CCCP)*
-
 Free and Open Source Software (FOSS) was born free: anyone can join, anyone can fork, anyone can argue.
 Its strength is pluralism — different people, different ideas, clashing and combining to make better software.
 

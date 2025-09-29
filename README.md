@@ -177,7 +177,7 @@ cargo run --release
 …or by launching the built binary directly:
 
 ```bash
-./target/release/dict_ai_te_mock
+./target/release/dict_ai_te
 ```
 
 Environment setup (any of the app variants):
@@ -258,8 +258,7 @@ language lists defined in `dictaite/ui_common.py`. Use the Play buttons to previ
 Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation.  
 Participation is open to all, regardless of background or viewpoint.  
 
-This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md),  
-which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
+This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md), which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
 
 
 ## License and Copyright
