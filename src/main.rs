@@ -86,8 +86,10 @@ fn main() -> eframe::Result<()> {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([440.0, 780.0])
-            .with_min_inner_size([360.0, 640.0])
+            // Reduce initial height to two-thirds of previous (780 -> 520)
+            .with_inner_size([440.0, 520.0])
+            // Adjust minimum height to keep layout usable
+            .with_min_inner_size([360.0, 480.0])
             .with_transparent(false)
             .with_decorations(true)
             .with_resizable(true),

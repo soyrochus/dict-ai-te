@@ -8,15 +8,16 @@
 
 - A native desktop app with GTK 4 (Linux/macOS)
 - A browser-based Web UI powered by Flask
+- A Rust version (can run natively on Linux, MacOS and Windows and on Web with Wasm/WebGL)
 
 Both experiences share the same engine and settings.
 
 
-| Ubuntu | macOS |
+| Python GTK (Ubuntu) | Python GTK (macOS) |
 | :----: | :---: |
 | ![dict-ai-te on Ubuntu](img/dict-ai-te-ubuntu.png) | ![dict-ai-te on macOS](img/dict-ai-te-mac.png) |
 
-| Web browser | Rust (multi-os) |
+| Python Web (Flask) | Rust (egui; shown on Ubuntu) |
 | :----:      |:---:            |
 | ![dict-ai-te on Web](img/dict-ai-te-web.png) |![dict-ai-te as Rust App](img/dict-ai-te-rust.png) |
 

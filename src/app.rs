@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use arboard::Clipboard;
 use eframe::App;
-use egui::{self, Align, Color32, Context, Frame, Layout, RichText, ScrollArea, Ui, Vec2};
+use egui::{self, Align, Color32, Context, Frame, Layout, RichText, Ui, Vec2};
 
 use crate::audio::{AudioClip, AudioPlayer, Recorder};
 use crate::constants::{FEMALE_VOICES, LANGUAGES, MALE_VOICES, VOICE_SAMPLE_TEXT};
@@ -454,6 +454,48 @@ impl App for DictaiteApp {
             });
         });
 
+        // Bottom controls bar anchored to the window bottom
+        egui::TopBottomPanel::bottom("controls_bar").show(ctx, |ui| {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.button("⬇ Save").clicked() {
+                    self.save_transcript();
+                }
+                if ui.button("⧉ Copy").clicked() {
+                    self.copy_transcript();
+                }
+                let mut play_label = "▶ Play";
+                if let Some(player) = &self.player {
+                    if player.is_playing() {
+                        play_label = "■ Stop";
+                    }
+                }
+                if ui.button(play_label).clicked() {
+                    if let Some(player) = &mut self.player {
+                        if player.is_playing() {
+                            player.stop();
+                        } else {
+                            self.play_transcript_audio();
+                        }
+                    } else {
+                        self.error_text = Some("Audio output unavailable".to_string());
+                    }
+                }
+
+                ui.separator();
+                ui.radio_value(&mut self.preferred_gender, VoiceGender::Female, "Female");
+                ui.radio_value(&mut self.preferred_gender, VoiceGender::Male, "Male");
+            });
+
+            ui.add_space(6.0);
+            if let Some(err) = &self.error_text {
+                ui.colored_label(Color32::from_rgb(200, 60, 60), err);
+            } else if let Some(msg) = &self.player_error {
+                ui.colored_label(Color32::from_rgb(200, 60, 60), msg);
+            }
+            self.update_copy_feedback(ui);
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // let top_button_label = if self.is_recording {
             //     "Stop Recording"
@@ -539,57 +581,17 @@ impl App for DictaiteApp {
             });
 
             ui.add_space(10.0);
-            ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                let width = ui.available_width();
-                ui.set_width(width);
-                let response = ui.add_sized(
-                    Vec2::new(width, ui.spacing().interact_size.y * 10.0),
-                    egui::TextEdit::multiline(&mut self.transcript)
-                        .hint_text("Transcribed text will appear here…"),
-                );
-                if response.changed() {
-                    self.raw_transcript = Some(self.transcript.clone());
-                }
-            });
-
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("⬇ Save").clicked() {
-                    self.save_transcript();
-                }
-                if ui.button("⧉ Copy").clicked() {
-                    self.copy_transcript();
-                }
-                let mut play_label = "▶ Play";
-                if let Some(player) = &self.player {
-                    if player.is_playing() {
-                        play_label = "■ Stop";
-                    }
-                }
-                if ui.button(play_label).clicked() {
-                    if let Some(player) = &mut self.player {
-                        if player.is_playing() {
-                            player.stop();
-                        } else {
-                            self.play_transcript_audio();
-                        }
-                    } else {
-                        self.error_text = Some("Audio output unavailable".to_string());
-                    }
-                }
-
-                ui.separator();
-                ui.radio_value(&mut self.preferred_gender, VoiceGender::Female, "Female");
-                ui.radio_value(&mut self.preferred_gender, VoiceGender::Male, "Male");
-            });
-
-            ui.add_space(6.0);
-            if let Some(err) = &self.error_text {
-                ui.colored_label(Color32::from_rgb(200, 60, 60), err);
-            } else if let Some(msg) = &self.player_error {
-                ui.colored_label(Color32::from_rgb(200, 60, 60), msg);
+            // Make the transcript editor fill the remaining space in the central panel
+            let width = ui.available_width();
+            let height = ui.available_height();
+            let response = ui.add_sized(
+                Vec2::new(width, height),
+                egui::TextEdit::multiline(&mut self.transcript)
+                    .hint_text("Transcribed text will appear here…"),
+            );
+            if response.changed() {
+                self.raw_transcript = Some(self.transcript.clone());
             }
-            self.update_copy_feedback(ui);
         });
 
         if let Some(mut modal) = self.settings_modal.take() {
