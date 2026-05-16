@@ -13,7 +13,9 @@ use crate::openai::OpenAiClient;
 use crate::realtime::events::RealtimeEvent;
 use crate::realtime::state::LiveState;
 use crate::realtime::transcript::TranscriptAssembler;
-use crate::realtime::transport::{run_live_transcription, RealtimeSessionConfig};
+use crate::realtime::transport::{
+    run_live_transcription, run_live_translation, RealtimeSessionConfig,
+};
 use crate::settings::{load_settings, save_settings, Settings};
 
 pub struct DictaiteApp {
@@ -158,14 +160,11 @@ impl DictaiteApp {
         } else {
             Some(LANGUAGES[self.origin_language_index].code.to_string())
         };
-        if translate {
-            self.live_state = LiveState::Error;
-            self.status_text = "Live translation unavailable".to_string();
-            self.error_text = Some(
-                "Live translation is unavailable: no current official OpenAI Realtime translation endpoint/model contract was verified for Rust.".to_string(),
-            );
-            return;
-        }
+        let target_language = if translate {
+            Some(LANGUAGES[self.target_language_index].name.to_string())
+        } else {
+            None
+        };
 
         let (audio_tx, audio_rx) = tokio::sync::mpsc::channel(32);
         let (rt_event_tx, mut rt_event_rx) = tokio::sync::mpsc::channel(128);
@@ -180,10 +179,17 @@ impl DictaiteApp {
         let config = RealtimeSessionConfig {
             api_key: client.api_key().to_string(),
             source_language,
+            target_language,
         };
-        runtime.spawn(async move {
-            let _ = run_live_transcription(config, audio_rx, rt_event_tx, stop_rx).await;
-        });
+        if translate {
+            runtime.spawn(async move {
+                let _ = run_live_translation(config, audio_rx, rt_event_tx, stop_rx).await;
+            });
+        } else {
+            runtime.spawn(async move {
+                let _ = run_live_transcription(config, audio_rx, rt_event_tx, stop_rx).await;
+            });
+        }
 
         match LiveCapture::start(audio_tx, self.live_event_tx.clone()) {
             Ok(capture) => {
@@ -193,7 +199,10 @@ impl DictaiteApp {
                 self.record_started_at = Some(Instant::now());
                 self.live_state = LiveState::connected(translate);
                 self.status_text = if translate {
-                    "Live translation unavailable until the OpenAI Realtime translation API contract is verified".to_string()
+                    format!(
+                        "Translating live to {}",
+                        LANGUAGES[self.target_language_index].name
+                    )
                 } else {
                     "Listening live...".to_string()
                 };
@@ -647,19 +656,25 @@ impl App for DictaiteApp {
                 }
             });
 
-            ui.horizontal(|ui| {
-                ui.label("Target language");
-                egui::ComboBox::from_id_source("target_lang")
-                    .selected_text(LANGUAGES[self.target_language_index].name)
-                    .show_ui(ui, |ui| {
-                        for (idx, lang) in LANGUAGES.iter().enumerate() {
-                            if idx == 0 {
-                                continue;
+            if self.translate_enabled {
+                ui.horizontal(|ui| {
+                    ui.label("Target language");
+                    egui::ComboBox::from_id_source("target_lang")
+                        .selected_text(LANGUAGES[self.target_language_index].name)
+                        .show_ui(ui, |ui| {
+                            for (idx, lang) in LANGUAGES.iter().enumerate() {
+                                if idx == 0 {
+                                    continue;
+                                }
+                                ui.selectable_value(
+                                    &mut self.target_language_index,
+                                    idx,
+                                    lang.name,
+                                );
                             }
-                            ui.selectable_value(&mut self.target_language_index, idx, lang.name);
-                        }
-                    });
-            });
+                        });
+                });
+            }
 
             ui.add_space(10.0);
             let width = ui.available_width();

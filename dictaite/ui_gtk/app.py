@@ -261,10 +261,13 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.audio_frames.clear()
         try:
             mode = LiveMode.TRANSLATE if self.translate_switch.get_active() else LiveMode.TRANSCRIBE
+            source_language = self.language_combo.get_active_id()
+            if not source_language or source_language == "default":
+                source_language = None
             self.source_assembler = TranscriptAssembler()
             self.live_session = GtkLiveSession(
                 mode,
-                self.language_combo.get_active_id(),
+                source_language,
                 self.target_combo.get_active_id() if mode == LiveMode.TRANSLATE else None,
                 self.on_live_event,
                 self.on_live_error,

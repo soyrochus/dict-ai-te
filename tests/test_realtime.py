@@ -9,6 +9,8 @@ from dictaite_core.config import Settings
 from dictaite_core.realtime import (
     LiveMode,
     NormalizedEvent,
+    OpenAIRealtimeClient,
+    RealtimeClientConfig,
     RealtimeEventType,
     TranscriptAssembler,
     base64_pcm16,
@@ -18,6 +20,12 @@ from dictaite_core.realtime import (
     normalize_audio,
     parse_realtime_event,
     realtime_settings_from_legacy,
+)
+
+from dictaite_core.realtime.transport import (
+    RealtimeClientError,
+    _normalize_optional_language,
+    _websocket_header_kwargs,
 )
 
 
@@ -85,3 +93,137 @@ def test_websocket_bridge_normalizes_mocked_realtime_traffic():
 
     asyncio.run(bridge_websocket_messages(incoming(), send, FakeClient()))
     assert sent == [{"type": "source_delta", "text": "Hi", "item_id": "1", "state": None, "error": None}]
+
+
+def test_realtime_client_loads_dotenv_for_api_key(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("OPENAI_API_KEY=from-dotenv\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    config = RealtimeClientConfig(mode=LiveMode.TRANSCRIBE)
+
+    assert config.resolved_api_key == "from-dotenv"
+
+
+def test_realtime_client_omits_legacy_beta_header(monkeypatch):
+    captured = {}
+
+    class FakeWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, _message):
+            return None
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    def fake_connect(url, *, additional_headers):
+        captured["url"] = url
+        captured["headers"] = additional_headers
+        return FakeWebSocket()
+
+    async def no_audio():
+        if False:
+            yield ""
+
+    async def emit(_event):
+        return None
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    client = OpenAIRealtimeClient(RealtimeClientConfig(mode=LiveMode.TRANSCRIBE))
+    asyncio.run(client.run(no_audio(), emit))
+
+    assert captured["headers"] == {"Authorization": "Bearer test-key"}
+    assert "intent=transcription" in captured["url"]
+
+
+def test_realtime_client_uses_ga_transcription_session_payload():
+    client = OpenAIRealtimeClient(
+        RealtimeClientConfig(mode=LiveMode.TRANSCRIBE, source_language="de")
+    )
+
+    payload = client._session_update()
+
+    assert payload["type"] == "session.update"
+    assert payload["session"]["type"] == "transcription"
+    assert payload["session"]["audio"]["input"]["format"] == {
+        "type": "audio/pcm",
+        "rate": 24000,
+    }
+    assert payload["session"]["audio"]["input"]["transcription"]["model"] == "gpt-4o-transcribe"
+    assert payload["session"]["audio"]["input"]["transcription"]["language"] == "de"
+
+
+def test_realtime_client_omits_default_auto_detect_language():
+    client = OpenAIRealtimeClient(
+        RealtimeClientConfig(mode=LiveMode.TRANSCRIBE, source_language="default")
+    )
+
+    payload = client._session_update()
+
+    assert "language" not in payload["session"]["audio"]["input"]["transcription"]
+    assert _normalize_optional_language(None) is None
+    assert _normalize_optional_language("") is None
+    assert _normalize_optional_language("default") is None
+    assert _normalize_optional_language(" es ") == "es"
+
+
+def test_realtime_translation_reports_unavailable_before_connect(monkeypatch):
+    async def no_audio():
+        if False:
+            yield ""
+
+    async def emit(_event):
+        return None
+
+    def fail_connect(*_args, **_kwargs):
+        raise AssertionError("translation mode should fail before websocket connect")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("websockets.connect", fail_connect)
+    client = OpenAIRealtimeClient(
+        RealtimeClientConfig(mode=LiveMode.TRANSLATE, target_language="es")
+    )
+
+    try:
+        asyncio.run(client.run(no_audio(), emit))
+    except RealtimeClientError as exc:
+        assert "Live translation is unavailable" in str(exc)
+    else:
+        raise AssertionError("expected unavailable translation error")
+
+
+def test_websocket_header_kwargs_supports_old_and_new_websockets():
+    def new_connect(uri, *, additional_headers=None):
+        return None
+
+    def old_connect(uri, *, extra_headers=None):
+        return None
+
+    headers = {"Authorization": "Bearer test"}
+
+    assert _websocket_header_kwargs(new_connect, headers) == {"additional_headers": headers}
+    assert _websocket_header_kwargs(old_connect, headers) == {"extra_headers": headers}
+
+
+def test_realtime_client_reports_missing_api_key(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = RealtimeClientConfig(mode=LiveMode.TRANSCRIBE)
+
+    try:
+        _ = config.resolved_api_key
+    except RealtimeClientError as exc:
+        assert "OPENAI_API_KEY" in str(exc)
+    else:
+        raise AssertionError("expected missing key error")

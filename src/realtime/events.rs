@@ -56,7 +56,9 @@ pub fn parse_event(value: &serde_json::Value) -> RealtimeEvent {
             item_id: None,
             text: raw.delta.unwrap_or_default(),
         },
-        Some("session.output_transcript.delta") => RealtimeEvent::TranslationDelta {
+        Some("session.output_transcript.delta")
+        | Some("response.output_text.delta")
+        | Some("response.output_audio_transcript.delta") => RealtimeEvent::TranslationDelta {
             text: raw.delta.unwrap_or_default(),
         },
         Some("session.output_audio.delta")
@@ -124,6 +126,20 @@ mod tests {
         assert_eq!(
             parse_event(&json!({"type": "response.audio.delta", "delta": "secret-audio"})),
             RealtimeEvent::TranslatedAudioDelta
+        );
+    }
+
+    #[test]
+    fn parses_ga_realtime_translation_text_delta() {
+        let event = parse_event(&json!({
+            "type": "response.output_text.delta",
+            "delta": "Hola"
+        }));
+        assert_eq!(
+            event,
+            RealtimeEvent::TranslationDelta {
+                text: "Hola".into()
+            }
         );
     }
 }
