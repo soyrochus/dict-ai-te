@@ -2,28 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
+import struct
 
 import numpy as np
 
-from dictaite_core.config import Settings
 from dictaite_core.realtime import (
     LiveMode,
-    NormalizedEvent,
     OpenAIRealtimeClient,
     RealtimeClientConfig,
     RealtimeEventType,
     TranscriptAssembler,
     base64_pcm16,
-    bridge_websocket_messages,
     chunk_pcm16,
     float_samples_to_pcm16,
     normalize_audio,
     parse_realtime_event,
-    realtime_settings_from_legacy,
 )
 
 from dictaite_core.realtime.transport import (
     RealtimeClientError,
+    TRANSLATION_MODEL,
     _normalize_optional_language,
     _websocket_header_kwargs,
 )
@@ -38,6 +37,7 @@ def test_pcm_conversion_chunking_and_base64():
     chunks = chunk_pcm16(pcm, chunk_ms=20)
     assert chunks
     assert base64.b64decode(base64_pcm16(chunks[0]))
+    assert struct.unpack("<hh", float_samples_to_pcm16(np.array([-1.0, 1.0], dtype=np.float32))) == (-32768, 32767)
 
 
 def test_event_parsing_and_unknown_safety():
@@ -52,6 +52,12 @@ def test_event_parsing_and_unknown_safety():
     assert event.item_id == "item-1"
     assert parse_realtime_event({"type": "future.event"}).type == RealtimeEventType.UNKNOWN
     assert parse_realtime_event({"type": "session.output_audio.delta", "delta": "secret"}).type == RealtimeEventType.TRANSLATED_AUDIO_DELTA
+    assert parse_realtime_event({"type": "response.audio.delta"}).type == RealtimeEventType.TRANSLATED_AUDIO_DELTA
+    assert parse_realtime_event({"type": "response.output_audio.delta"}).type == RealtimeEventType.TRANSLATED_AUDIO_DELTA
+    assert parse_realtime_event({"type": "response.output_text.delta", "delta": "Hola"}).type == RealtimeEventType.TRANSLATION_DELTA
+    assert parse_realtime_event({"type": "response.output_audio_transcript.delta", "delta": "Hola"}).type == RealtimeEventType.TRANSLATION_DELTA
+    assert parse_realtime_event({"type": "response.completed"}).type == RealtimeEventType.SESSION_STATE
+    assert parse_realtime_event({"type": "session.anything.new"}).type == RealtimeEventType.SESSION_STATE
 
 
 def test_transcript_assembly_replaces_partial_without_duplicate():
@@ -63,36 +69,12 @@ def test_transcript_assembly_replaces_partial_without_duplicate():
     assert assembler.text == "Hello. Second"
 
 
-def test_realtime_settings_migration():
-    settings = realtime_settings_from_legacy(
-        Settings(default_language="de", translate_by_default=True, default_target_language="es")
-    )
-    assert settings.live_translation_enabled is True
-    assert settings.mode == LiveMode.TRANSLATE
-    assert settings.source_language == "de"
-    assert settings.target_language == "es"
+def test_transcript_assembly_keeps_repeated_anonymous_completions():
+    assembler = TranscriptAssembler()
+    assembler.complete("Again.", None)
+    assembler.complete("Again.", None)
 
-
-def test_websocket_bridge_normalizes_mocked_realtime_traffic():
-    class FakeClient:
-        async def run(self, audio_chunks, on_event):
-            chunks = []
-            async for chunk in audio_chunks:
-                chunks.append(chunk)
-            assert chunks == ["abc"]
-            await on_event(NormalizedEvent(RealtimeEventType.SOURCE_DELTA, text="Hi", item_id="1"))
-
-    async def incoming():
-        yield {"type": "audio", "audio": "abc"}
-        yield {"type": "stop"}
-
-    sent = []
-
-    async def send(payload):
-        sent.append(payload)
-
-    asyncio.run(bridge_websocket_messages(incoming(), send, FakeClient()))
-    assert sent == [{"type": "source_delta", "text": "Hi", "item_id": "1", "state": None, "error": None}]
+    assert assembler.text == "Again. Again."
 
 
 def test_realtime_client_loads_dotenv_for_api_key(tmp_path, monkeypatch):
@@ -152,7 +134,7 @@ def test_realtime_client_uses_ga_transcription_session_payload():
         RealtimeClientConfig(mode=LiveMode.TRANSCRIBE, source_language="de")
     )
 
-    payload = client._session_update()
+    payload = client._transcription_session_update()
 
     assert payload["type"] == "session.update"
     assert payload["session"]["type"] == "transcription"
@@ -169,7 +151,7 @@ def test_realtime_client_omits_default_auto_detect_language():
         RealtimeClientConfig(mode=LiveMode.TRANSCRIBE, source_language="default")
     )
 
-    payload = client._session_update()
+    payload = client._transcription_session_update()
 
     assert "language" not in payload["session"]["audio"]["input"]["transcription"]
     assert _normalize_optional_language(None) is None
@@ -178,29 +160,65 @@ def test_realtime_client_omits_default_auto_detect_language():
     assert _normalize_optional_language(" es ") == "es"
 
 
-def test_realtime_translation_reports_unavailable_before_connect(monkeypatch):
+def test_realtime_translation_session_payload():
+    client = OpenAIRealtimeClient(
+        RealtimeClientConfig(mode=LiveMode.TRANSLATE, target_language="French", source_language="es")
+    )
+
+    payload = client._translation_session_update()
+
+    assert payload["session"]["type"] == "realtime"
+    assert payload["session"]["model"] == TRANSLATION_MODEL
+    assert payload["session"]["output_modalities"] == ["text"]
+    assert "French" in payload["session"]["instructions"]
+    audio = payload["session"]["audio"]["input"]
+    assert audio["transcription"]["language"] == "es"
+    assert audio["turn_detection"]["create_response"] is True
+    assert audio["turn_detection"]["interrupt_response"] is True
+
+
+def test_realtime_client_emits_lifecycle_events(monkeypatch):
+    sent = []
+
+    class FakeWebSocket:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def send(self, message):
+            sent.append(message)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    def fake_connect(_url, *, additional_headers):
+        return FakeWebSocket()
+
     async def no_audio():
         if False:
             yield ""
 
-    async def emit(_event):
-        return None
+    events = []
 
-    def fail_connect(*_args, **_kwargs):
-        raise AssertionError("translation mode should fail before websocket connect")
+    async def emit(event):
+        events.append(event)
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr("websockets.connect", fail_connect)
-    client = OpenAIRealtimeClient(
-        RealtimeClientConfig(mode=LiveMode.TRANSLATE, target_language="es")
-    )
+    monkeypatch.setattr("websockets.connect", fake_connect)
 
-    try:
-        asyncio.run(client.run(no_audio(), emit))
-    except RealtimeClientError as exc:
-        assert "Live translation is unavailable" in str(exc)
-    else:
-        raise AssertionError("expected unavailable translation error")
+    client = OpenAIRealtimeClient(RealtimeClientConfig(mode=LiveMode.TRANSLATE, target_language="German"))
+    asyncio.run(client.run(no_audio(), emit))
+
+    assert json_message_types(sent) == ["session.update", "input_audio_buffer.commit"]
+    assert [(event.type, event.state) for event in events] == [
+        (RealtimeEventType.SESSION_STATE, "connecting"),
+        (RealtimeEventType.SESSION_STATE, "disconnected"),
+    ]
 
 
 def test_websocket_header_kwargs_supports_old_and_new_websockets():
@@ -227,3 +245,7 @@ def test_realtime_client_reports_missing_api_key(tmp_path, monkeypatch):
         assert "OPENAI_API_KEY" in str(exc)
     else:
         raise AssertionError("expected missing key error")
+
+
+def json_message_types(messages):
+    return [json.loads(message)["type"] for message in messages]

@@ -9,18 +9,25 @@ import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 from .events import NormalizedEvent, RealtimeEventType, parse_realtime_event
-from .models import LiveMode
 
 LOGGER = logging.getLogger(__name__)
 
 TRANSCRIPTION_MODEL = "gpt-4o-transcribe"
 TRANSCRIPTION_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
+TRANSLATION_MODEL = "gpt-realtime"
+TRANSLATION_URL = f"wss://api.openai.com/v1/realtime?model={TRANSLATION_MODEL}"
+
+
+class LiveMode(StrEnum):
+    TRANSCRIBE = "transcribe"
+    TRANSLATE = "translate"
 
 
 class RealtimeClientError(RuntimeError):
@@ -60,27 +67,31 @@ class OpenAIRealtimeClient:
             raise RealtimeClientError("Install websockets to use realtime sessions") from exc
 
         if self.config.mode == LiveMode.TRANSLATE:
-            raise RealtimeClientError(
-                "Live translation is unavailable: no current official OpenAI Realtime "
-                "translation endpoint/model contract was verified."
-            )
+            url = TRANSLATION_URL
+            session_update = self._translation_session_update()
+        else:
+            url = TRANSCRIPTION_URL
+            session_update = self._transcription_session_update()
 
-        url = TRANSCRIPTION_URL
         headers = {
             "Authorization": f"Bearer {self.config.resolved_api_key}",
         }
         connect_kwargs = _websocket_header_kwargs(websockets.connect, headers)
         async with websockets.connect(url, **connect_kwargs) as websocket:
-            await websocket.send(json.dumps(self._session_update()))
-            sender = asyncio.create_task(self._send_audio(websocket, audio_chunks))
-            receiver = asyncio.create_task(self._receive_events(websocket, on_event))
-            done, pending = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_EXCEPTION)
-            for task in pending:
-                task.cancel()
-            for task in done:
-                task.result()
+            await websocket.send(json.dumps(session_update))
+            await on_event(NormalizedEvent(RealtimeEventType.SESSION_STATE, state="connecting"))
+            try:
+                sender = asyncio.create_task(self._send_audio(websocket, audio_chunks))
+                receiver = asyncio.create_task(self._receive_events(websocket, on_event))
+                done, pending = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_EXCEPTION)
+                for task in pending:
+                    task.cancel()
+                for task in done:
+                    task.result()
+            finally:
+                await on_event(NormalizedEvent(RealtimeEventType.SESSION_STATE, state="disconnected"))
 
-    def _session_update(self) -> dict[str, Any]:
+    def _transcription_session_update(self) -> dict[str, Any]:
         session: dict[str, Any] = {
             "type": "session.update",
             "session": {
@@ -94,6 +105,40 @@ class OpenAIRealtimeClient:
                             "threshold": 0.5,
                             "prefix_padding_ms": 300,
                             "silence_duration_ms": 500,
+                        },
+                    }
+                },
+            },
+        }
+        source_language = _normalize_optional_language(self.config.source_language)
+        if source_language:
+            session["session"]["audio"]["input"]["transcription"]["language"] = source_language
+        return session
+
+    def _translation_session_update(self) -> dict[str, Any]:
+        target_language = (self.config.target_language or "").strip() or "English"
+        session: dict[str, Any] = {
+            "type": "session.update",
+            "session": {
+                "type": "realtime",
+                "model": TRANSLATION_MODEL,
+                "output_modalities": ["text"],
+                "instructions": (
+                    f"Translate the user's speech into {target_language}. "
+                    "Return only the translated text. Preserve meaning, names, "
+                    "numbers, and paragraph boundaries."
+                ),
+                "audio": {
+                    "input": {
+                        "format": {"type": "audio/pcm", "rate": 24000},
+                        "transcription": {"model": TRANSCRIPTION_MODEL},
+                        "turn_detection": {
+                            "type": "server_vad",
+                            "threshold": 0.5,
+                            "prefix_padding_ms": 300,
+                            "silence_duration_ms": 500,
+                            "create_response": True,
+                            "interrupt_response": True,
                         },
                     }
                 },
@@ -124,47 +169,6 @@ class OpenAIRealtimeClient:
             event = parse_realtime_event(payload)
             if event.type != RealtimeEventType.UNKNOWN:
                 await on_event(event)
-
-
-async def bridge_websocket_messages(
-    incoming: AsyncIterator[dict[str, Any]],
-    send_browser_event: Callable[[dict[str, Any]], Awaitable[None]],
-    client: OpenAIRealtimeClient,
-) -> None:
-    """Proxy browser audio messages to OpenAI and normalized events back."""
-
-    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=8)
-
-    async def audio_iter() -> AsyncIterator[str]:
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield item
-
-    async def browser_reader() -> None:
-        async for message in incoming:
-            msg_type = message.get("type")
-            if msg_type == "audio":
-                audio = message.get("audio")
-                if isinstance(audio, str) and audio:
-                    await queue.put(audio)
-            elif msg_type in {"stop", "close"}:
-                break
-        await queue.put(None)
-
-    async def emit(event: NormalizedEvent) -> None:
-        await send_browser_event(
-            {
-                "type": event.type.value,
-                "text": event.text,
-                "item_id": event.item_id,
-                "state": event.state,
-                "error": event.error,
-            }
-        )
-
-    await asyncio.gather(browser_reader(), client.run(audio_iter(), emit))
 
 
 def _websocket_header_kwargs(connect: Callable[..., Any], headers: dict[str, str]) -> dict[str, dict[str, str]]:

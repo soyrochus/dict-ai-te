@@ -1,24 +1,5 @@
 from __future__ import annotations
 
-import io
-
-def test_transcribe_endpoint_returns_text(monkeypatch, client, wav_bytes):
-    monkeypatch.setattr("dictaite.ui_web.app.transcribe", lambda audio, mimetype, language: "Hello world")
-    monkeypatch.setattr("dictaite.ui_web.app.translate", lambda text, target: f"Translated {target}")
-
-    data = {
-        'audio': (io.BytesIO(wav_bytes), 'sample.wav'),
-        'language': 'en',
-        'translate': 'true',
-        'target_lang': 'es',
-    }
-    response = client.post('/api/transcribe', data=data, content_type='multipart/form-data')
-    assert response.status_code == 200
-    payload = response.get_json()
-    assert payload['text'] == 'Hello world'
-    assert payload['translatedText'] == 'Translated es'
-    assert payload['durationMs'] >= 0
-
 
 def test_settings_roundtrip(client):
     with client.application.app_context():

@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from typing import BinaryIO
 
-from dictaite_core.services import synthesize_speech, transcribe, translate
+from dictaite_core.services import synthesize_speech
 from dictaite_core.services._client import get_openai_client  # re-exported for backwards compatibility
 
 
 def transcribe_file(file: BinaryIO, language: str | None = None) -> str:
-    data = file.read()
-    lang = None if not language or language == "default" else language
-    return transcribe(data, "audio/wav", lang)
+    raise RuntimeError("Batch transcription was removed; use realtime transcription instead")
 
 
 def translate_text(text: str, _src_name: str, tgt_name: str) -> str:
-    return translate(text, tgt_name)
+    raise RuntimeError("Batch translation was removed; use realtime translation instead")
 
 
 def generate_preview(text: str, voice: str | None = None) -> bytes:

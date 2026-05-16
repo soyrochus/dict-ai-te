@@ -29,8 +29,8 @@ class Settings:
     default_language: str | None = None
     translate_by_default: bool = False
     default_target_language: str | None = "en"
-    female_voice: str = "Nova"
-    male_voice: str = "Onyx"
+    female_voice: str = "nova"
+    male_voice: str = "onyx"
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "Settings":
@@ -41,8 +41,8 @@ class Settings:
             default_target_language=_coerce_optional_str(
                 payload.get("default_target_language", payload.get("target_language"))
             ),
-            female_voice=str(payload.get("female_voice", payload.get("femaleVoice", "Nova"))) or "Nova",
-            male_voice=str(payload.get("male_voice", payload.get("maleVoice", "Onyx"))) or "Onyx",
+            female_voice=_normalize_voice(payload.get("female_voice", payload.get("femaleVoice")), "nova"),
+            male_voice=_normalize_voice(payload.get("male_voice", payload.get("maleVoice")), "onyx"),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -62,25 +62,26 @@ def load_settings(path: Path | None = None) -> Settings:
         if legacy:
             LOGGER.info("Migrated legacy configuration from %s", _legacy_config_path())
             save_settings(legacy, settings_path)
-            return legacy
-        return Settings()
+            return fill_defaults(legacy)
+        return fill_defaults(Settings())
     except OSError as exc:  # pragma: no cover - filesystem failure
         LOGGER.warning("Failed reading settings at %s: %s", settings_path, exc)
-        return Settings()
+        return fill_defaults(Settings())
 
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         LOGGER.warning("Invalid JSON in %s: %s", settings_path, exc)
-        return Settings()
+        return fill_defaults(Settings())
 
-    return Settings.from_mapping(payload)
+    return fill_defaults(Settings.from_mapping(payload))
 
 
 def save_settings(settings: Settings, path: Path | None = None) -> None:
     """Persist settings to disk in JSON format."""
 
     settings_path = path or _settings_path()
+    settings = fill_defaults(settings)
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(settings.to_mapping(), indent=2, sort_keys=True)
     settings_path.write_text(payload, encoding="utf-8")
@@ -119,10 +120,24 @@ def _coerce_optional_str(value: Any) -> str | None:
     return str(value)
 
 
+def _normalize_voice(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    return normalized or default
+
+
+def fill_defaults(settings: Settings) -> Settings:
+    settings.female_voice = _normalize_voice(settings.female_voice, "nova")
+    settings.male_voice = _normalize_voice(settings.male_voice, "onyx")
+    return settings
+
+
 __all__ = [
     "Settings",
     "load_settings",
     "save_settings",
+    "fill_defaults",
     "CONFIG_DIR",
     "SETTINGS_PATH",
 ]

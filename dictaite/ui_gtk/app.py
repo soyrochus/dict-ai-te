@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import logging
 import os
-import tempfile
 import threading
 import time
 from dataclasses import replace
@@ -18,7 +17,7 @@ import soundfile as sf
 
 from dictaite_core import Settings, load_settings, save_settings
 from dictaite_core.realtime import LiveMode, NormalizedEvent, RealtimeEventType, TranscriptAssembler
-from dictaite_core.services import TranscriptionError, synthesize_speech, transcribe, translate
+from dictaite_core.services import synthesize_speech
 
 from ..ui_common import FEMALE_VOICES, LANGUAGES, LANGUAGE_NAME, MALE_VOICES, VOICE_SAMPLE_TEXT
 from .live import GtkLiveSession
@@ -51,10 +50,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.start_time: float | None = None
         self.elapsed_seconds = 0
         self.timer_thread: threading.Thread | None = None
-        self.stream: sd.InputStream | None = None
-        self.audio_frames: list[np.ndarray] = []
         self.live_session: GtkLiveSession | None = None
         self.source_assembler = TranscriptAssembler()
+        self.translated_transcript = ""
 
         self.mic_icon_path = os.path.join(str(IMGDIR), "microphone.png")
         self.stop_icon_path = os.path.join(str(IMGDIR), "stop.png")
@@ -131,9 +129,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         translate_box.append(self.translate_switch)
         controls_box.append(translate_box)
 
-        dest_label = Gtk.Label(label="Destination language")
-        dest_label.set_halign(Gtk.Align.START)
-        controls_box.append(dest_label)
+        self.dest_label = Gtk.Label(label="Destination language")
+        self.dest_label.set_halign(Gtk.Align.START)
+        controls_box.append(self.dest_label)
         controls_box.append(self.target_combo)
 
         box.append(controls_box)
@@ -148,9 +146,9 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         scrolled.set_vexpand(True)
         box.append(scrolled)
 
-        translated_label = Gtk.Label(label="Translated transcript")
-        translated_label.set_halign(Gtk.Align.START)
-        box.append(translated_label)
+        self.translated_label = Gtk.Label(label="Translated transcript")
+        self.translated_label.set_halign(Gtk.Align.START)
+        box.append(self.translated_label)
 
         self.translated_text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
         self.translated_scrolled = Gtk.ScrolledWindow()
@@ -196,6 +194,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self._set_combo_active_id(self.language_combo, self.settings.default_language)
         self._set_combo_active_id(self.target_combo, self.settings.default_target_language)
         self.translate_switch.set_active(self.settings.translate_by_default)
+        self.on_translate_switch(self.translate_switch, None)
 
     def _set_combo_active_id(self, combo: Gtk.ComboBoxText, value: str | None, fallback: int = 0) -> None:
         if value:
@@ -255,20 +254,26 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     def start_recording(self) -> None:
         self.is_recording = True
         self.start_time = time.time()
-        self.status_label.set_text("Listening...")
 
         self.icon_image.set_from_file(self.stop_icon_path)
-        self.audio_frames.clear()
         try:
             mode = LiveMode.TRANSLATE if self.translate_switch.get_active() else LiveMode.TRANSCRIBE
             source_language = self.language_combo.get_active_id()
             if not source_language or source_language == "default":
                 source_language = None
+            target_code = self.target_combo.get_active_id() if mode == LiveMode.TRANSLATE else None
+            target_language = LANGUAGE_NAME.get(target_code, target_code) if target_code else None
+            if mode == LiveMode.TRANSLATE:
+                self.status_label.set_text(f"Translating live to {target_language or 'English'}")
+            else:
+                self.status_label.set_text("Listening live...")
             self.source_assembler = TranscriptAssembler()
+            self.translated_transcript = ""
+            self.translated_text_view.get_buffer().set_text("")
             self.live_session = GtkLiveSession(
                 mode,
                 source_language,
-                self.target_combo.get_active_id() if mode == LiveMode.TRANSLATE else None,
+                target_language,
                 self.on_live_event,
                 self.on_live_error,
             )
@@ -284,18 +289,10 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     def stop_recording(self) -> None:
         self.is_recording = False
         self.icon_image.set_from_file(self.mic_icon_path)
-        if self.stream:
-            try:
-                self.stream.stop()
-                self.stream.close()
-            except Exception as exc:  # pragma: no cover - runtime error path
-                LOGGER.exception("Failed to stop listening")
-                self.show_error("Listening error", str(exc))
-        self.stream = None
         if self.live_session:
             self.live_session.stop()
             self.live_session = None
-        self.status_label.set_text("Press to start listening")
+        self.status_label.set_text("Stopped")
         self.level.set_value(0.0)
         self.timer_label.set_text("00:00:00")
 
@@ -313,19 +310,31 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             time.sleep(1)
 
     def on_translate_switch(self, switch: Gtk.Switch, _param: object) -> None:
-        self.target_combo.set_sensitive(switch.get_active())
-        self.translated_scrolled.set_visible(switch.get_active())
+        active = switch.get_active()
+        self.dest_label.set_visible(active)
+        self.target_combo.set_visible(active)
+        self.target_combo.set_sensitive(active)
+        self.translated_label.set_visible(active)
+        self.translated_scrolled.set_visible(active)
 
     def on_live_event(self, event: NormalizedEvent) -> bool:
         if event.type in {RealtimeEventType.SOURCE_DELTA, RealtimeEventType.SOURCE_COMPLETED}:
             self.display_transcript(self.source_assembler.apply(event))
             self.status_label.set_text("Transcribing live")
         elif event.type == RealtimeEventType.TRANSLATION_DELTA:
-            buffer = self.translated_text_view.get_buffer()
-            start, end = buffer.get_bounds()
-            current = buffer.get_text(start, end, True)
-            buffer.set_text(current + event.text)
+            self.translated_transcript += event.text
+            self.translated_text_view.get_buffer().set_text(self.translated_transcript)
             self.status_label.set_text("Translating live")
+        elif event.type == RealtimeEventType.SESSION_STATE:
+            if event.state in {"connecting", "session.created", "session.updated"}:
+                self.status_label.set_text("Connected to live session")
+            elif event.state == "disconnected":
+                self.is_recording = False
+                self.live_session = None
+                self.icon_image.set_from_file(self.mic_icon_path)
+                self.status_label.set_text("Disconnected")
+                self.level.set_value(0.0)
+                self.timer_label.set_text("00:00:00")
         elif event.type == RealtimeEventType.ERROR:
             self.show_error("Live session", event.error or "Realtime session failed")
         return False
@@ -334,54 +343,6 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.show_error("Live session", message)
         self.status_label.set_text("Live session error")
         return False
-
-    # ------------------------------------------------------------------
-    # Audio handling
-    # ------------------------------------------------------------------
-
-    def audio_callback(self, indata, _frames, _time_info, status) -> None:
-        if status:
-            LOGGER.warning("Audio callback status: %s", status)
-        self.audio_frames.append(indata.copy())
-        amplitude = float(np.max(np.abs(indata))) if len(indata) else 0.0
-        GLib.idle_add(self.level.set_value, amplitude)
-
-    def transcribe_audio(self) -> None:
-        try:
-            audio = np.concatenate(self.audio_frames, axis=0) if self.audio_frames else np.array([], dtype=np.float32)
-            if not len(audio):
-                GLib.idle_add(self.status_label.set_text, "Press to start listening")
-                return
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                sf.write(tmp.name, audio, 16000)
-                path = tmp.name
-            lang_code = self.language_combo.get_active_id()
-            language = None if not lang_code or lang_code == "default" else lang_code
-            with open(path, "rb") as handle:
-                data = handle.read()
-            os.remove(path)
-            result = transcribe(data, "audio/wav", language)
-
-            if self.translate_switch.get_active():
-                target_code = self.target_combo.get_active_id()
-                if target_code:
-                    try:
-                        result = translate(result, LANGUAGE_NAME.get(target_code, target_code))
-                    except Exception as exc:  # pragma: no cover - network path
-                        LOGGER.exception("Translation failed")
-                        GLib.idle_add(self.show_error, "Translation error", str(exc))
-
-            GLib.idle_add(self.display_transcript, result)
-        except TranscriptionError as exc:
-            LOGGER.exception("Transcription error")
-            GLib.idle_add(self.show_error, "Transcription", str(exc))
-        except Exception as exc:  # pragma: no cover - network path
-            LOGGER.exception("Unexpected transcription failure")
-            GLib.idle_add(self.show_error, "Transcription", str(exc))
-        finally:
-            GLib.idle_add(self.status_label.set_text, "Press to start listening")
-            GLib.idle_add(self.level.set_value, 0.0)
-            GLib.idle_add(self.timer_label.set_text, "00:00:00")
 
     def display_transcript(self, text: str) -> None:
         buffer = self.text_view.get_buffer()
@@ -573,7 +534,6 @@ class SettingsDialog(Gtk.Dialog):
         self.translate_switch.set_active(settings.translate_by_default)
         self.translate_switch.set_halign(Gtk.Align.START)
         self.translate_switch.set_hexpand(False)
-        self.translate_switch.connect("notify::active", self._on_translate_toggle)
         grid.attach(self.translate_switch, 1, 1, 1, 1)
 
         target_label = Gtk.Label(label="Default target language")
@@ -584,7 +544,6 @@ class SettingsDialog(Gtk.Dialog):
         for item in target_languages:
             self.target_combo.append(item["code"], item["name"])
         self._set_combo_default(self.target_combo, settings.default_target_language)
-        self.target_combo.set_sensitive(settings.translate_by_default)
         grid.attach(self.target_combo, 1, 2, 1, 1)
 
         female_label = Gtk.Label(label="Female voice")
@@ -632,9 +591,6 @@ class SettingsDialog(Gtk.Dialog):
         voice_id = combo.get_active_id()
         if self.preview_callback:
             self.preview_callback(voice_id)
-
-    def _on_translate_toggle(self, switch: Gtk.Switch, _param: object) -> None:
-        self.target_combo.set_sensitive(switch.get_active())
 
     def build_settings(self, base: Settings) -> Settings:
         language = self.language_combo.get_active_id()

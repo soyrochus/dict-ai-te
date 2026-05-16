@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import Iterable
 
 import numpy as np
 
@@ -36,23 +35,18 @@ def float_samples_to_pcm16(samples: np.ndarray) -> bytes:
 
     audio = np.asarray(samples, dtype=np.float32)
     clipped = np.clip(audio, -1.0, 1.0)
-    return (clipped * 32767.0).astype("<i2").tobytes()
+    scaled = np.where(clipped < 0.0, clipped * 32768.0, clipped * 32767.0)
+    return scaled.astype("<i2").tobytes()
 
 
 def chunk_pcm16(pcm: bytes, sample_rate: int = TARGET_SAMPLE_RATE, chunk_ms: int = DEFAULT_CHUNK_MS) -> list[bytes]:
     """Split PCM16 into fixed duration chunks."""
 
-    if chunk_ms <= 0:
-        raise ValueError("chunk_ms must be positive")
     bytes_per_sample = 2
-    chunk_size = max(bytes_per_sample, int(sample_rate * chunk_ms / 1000) * bytes_per_sample)
+    chunk_size = int(sample_rate * chunk_ms / 1000) * bytes_per_sample
     chunk_size -= chunk_size % bytes_per_sample
     return [pcm[index : index + chunk_size] for index in range(0, len(pcm), chunk_size) if pcm[index : index + chunk_size]]
 
 
 def base64_pcm16(pcm: bytes) -> str:
     return base64.b64encode(pcm).decode("ascii")
-
-
-def chunks_as_base64(chunks: Iterable[bytes]) -> list[str]:
-    return [base64_pcm16(chunk) for chunk in chunks]

@@ -44,11 +44,15 @@ def parse_realtime_event(payload: Mapping[str, Any]) -> NormalizedEvent:
         )
     if event_type == "session.input_transcript.delta":
         return NormalizedEvent(RealtimeEventType.SOURCE_DELTA, text=_text(payload, "delta"))
-    if event_type == "session.output_transcript.delta":
+    if event_type in {
+        "session.output_transcript.delta",
+        "response.output_text.delta",
+        "response.output_audio_transcript.delta",
+    }:
         return NormalizedEvent(RealtimeEventType.TRANSLATION_DELTA, text=_text(payload, "delta"))
-    if event_type == "session.output_audio.delta":
+    if event_type in {"session.output_audio.delta", "response.audio.delta", "response.output_audio.delta"}:
         return NormalizedEvent(RealtimeEventType.TRANSLATED_AUDIO_DELTA)
-    if event_type in {"session.created", "session.updated", "response.created", "response.done"}:
+    if event_type.startswith("session.") or event_type.startswith("response."):
         return NormalizedEvent(RealtimeEventType.SESSION_STATE, state=event_type)
     if event_type == "error":
         error = payload.get("error")

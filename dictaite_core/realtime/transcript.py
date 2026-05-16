@@ -43,8 +43,7 @@ class TranscriptAssembler:
         if not text:
             return
         if not item_id:
-            if text not in self._anonymous:
-                self._anonymous.append(text)
+            self._anonymous.append(text)
             return
         segment = self._segments.setdefault(item_id, _Segment())
         segment.text = text
