@@ -1,0 +1,84 @@
+<!-- Hero block -->
+<header class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+  <div class="absolute right-0 top-0 h-40 w-40 rounded-full bg-blue-100 blur-3xl"></div>
+  <div class="relative">
+    <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Report</p>
+    <h1 class="mt-3 text-4xl font-semibold tracking-tight text-slate-950">REPORT_TITLE</h1>
+    <p class="mt-4 max-w-3xl text-lg text-slate-600">REPORT_SUBTITLE</p>
+  </div>
+</header>
+
+<!-- Metric card -->
+<div id="metric-example" data-component="metric-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">METRIC_LABEL</p>
+  <p class="mt-2 text-3xl font-semibold text-slate-950">METRIC_VALUE</p>
+  <p class="mt-2 text-sm text-slate-600">METRIC_EXPLANATION</p>
+</div>
+
+<!-- Finding card -->
+<article id="finding-example" data-component="finding-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">FINDING_TYPE</p>
+      <h3 class="mt-2 text-lg font-semibold text-slate-950">FINDING_TITLE</h3>
+    </div>
+    <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">STATUS</span>
+  </div>
+  <p class="mt-4 text-sm leading-6 text-slate-600">FINDING_TEXT</p>
+</article>
+
+<!-- Risk table -->
+<div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+  <table id="table-risk-matrix" data-component="risk-table" data-editable="true" class="min-w-full divide-y divide-slate-200 text-sm">
+    <thead class="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+      <tr>
+        <th class="px-4 py-3">Risk</th>
+        <th class="px-4 py-3">Impact</th>
+        <th class="px-4 py-3">Likelihood</th>
+        <th class="px-4 py-3">Mitigation</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-200">
+      <tr id="risk-example" data-row="risk">
+        <td class="px-4 py-4 font-medium text-slate-900">RISK_NAME</td>
+        <td class="px-4 py-4 text-slate-600">IMPACT</td>
+        <td class="px-4 py-4 text-slate-600">LIKELIHOOD</td>
+        <td class="px-4 py-4 text-slate-600">MITIGATION</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Inline SVG diagram -->
+<figure id="diagram-example" data-component="inline-svg-diagram" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <figcaption class="mb-4">
+    <h3 class="text-lg font-semibold text-slate-950">Architecture view</h3>
+    <p class="mt-1 text-sm text-slate-600">High-level relationship between the main report elements.</p>
+  </figcaption>
+
+  <svg viewBox="0 0 900 360" class="h-auto w-full" role="img" aria-labelledby="diagram-example-title">
+    <title id="diagram-example-title">High-level architecture diagram</title>
+    <g id="node-input-sources" data-node="architecture-node">
+      <rect x="40" y="60" width="210" height="90" rx="18" fill="#eff6ff" stroke="#bfdbfe"/>
+      <text x="145" y="103" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Input Sources</text>
+      <text x="145" y="128" text-anchor="middle" font-size="13" fill="#475569">Documents, data, code</text>
+    </g>
+    <g id="node-analysis-layer" data-node="architecture-node">
+      <rect x="345" y="60" width="210" height="90" rx="18" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="450" y="103" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Analysis Layer</text>
+      <text x="450" y="128" text-anchor="middle" font-size="13" fill="#475569">Synthesis and decisions</text>
+    </g>
+    <g id="node-html-report" data-node="architecture-node">
+      <rect x="650" y="60" width="210" height="90" rx="18" fill="#ecfdf5" stroke="#bbf7d0"/>
+      <text x="755" y="103" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">HTML Report</text>
+      <text x="755" y="128" text-anchor="middle" font-size="13" fill="#475569">Visual, structured output</text>
+    </g>
+    <path d="M250 105 H345" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M555 105 H650" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+      </marker>
+    </defs>
+  </svg>
+</figure>

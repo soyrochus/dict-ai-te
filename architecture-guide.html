@@ -1,0 +1,1085 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture Guide - dict-ai-te</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.10), transparent 28%),
+        radial-gradient(circle at top right, rgba(15, 23, 42, 0.08), transparent 22%),
+        linear-gradient(180deg, #f8fafc 0%, #f1f5f9 48%, #ffffff 100%);
+      color: #0f172a;
+      font-family: ui-sans-serif, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    h1, h2, h3, h4 {
+      letter-spacing: -0.02em;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(10px);
+    }
+
+    .report-card {
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+    }
+
+    .section-shell {
+      scroll-margin-top: 5.5rem;
+    }
+
+    .toc-link.is-active {
+      color: #0f172a;
+      background: rgba(59, 130, 246, 0.10);
+      border-color: rgba(59, 130, 246, 0.25);
+    }
+
+    .diagram-grid {
+      background-image:
+        linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    .code-block {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.86rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+
+      .no-print {
+        display: none !important;
+      }
+
+      .report-card {
+        box-shadow: none;
+      }
+
+      a[href]:after {
+        content: "";
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- EDIT-REGION: cover:start -->
+  <header id="section-cover" data-section="cover" data-title="Cover" class="section-shell relative overflow-hidden">
+    <div class="absolute inset-0 pointer-events-none">
+      <div class="absolute -top-24 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-blue-200/40 blur-3xl"></div>
+      <div class="absolute right-0 top-20 h-72 w-72 rounded-full bg-slate-200/60 blur-3xl"></div>
+    </div>
+    <div class="relative max-w-7xl mx-auto px-6 py-8 lg:py-10">
+      <nav class="no-print mb-8 flex flex-wrap items-center gap-2 text-sm text-slate-600" aria-label="Table of contents">
+        <a class="toc-link rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 transition hover:border-slate-300 hover:text-slate-900" href="#section-executive-summary">Executive summary</a>
+        <a class="toc-link rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 transition hover:border-slate-300 hover:text-slate-900" href="#section-system-overview">System overview</a>
+        <a class="toc-link rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 transition hover:border-slate-300 hover:text-slate-900" href="#section-audio-pipeline">Audio pipeline</a>
+        <a class="toc-link rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 transition hover:border-slate-300 hover:text-slate-900" href="#section-realtime-sessions">Realtime sessions</a>
+        <a class="toc-link rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 transition hover:border-slate-300 hover:text-slate-900" href="#section-remaining-differences">Remaining differences</a>
+      </nav>
+
+      <div class="grid gap-8 lg:grid-cols-[1.3fr_0.9fr] lg:items-center">
+        <div class="space-y-6">
+          <div class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">
+            Architecture Guide
+          </div>
+          <div class="space-y-4 max-w-3xl">
+            <h1 class="text-4xl font-semibold tracking-tight text-slate-950 md:text-5xl">dict-ai-te architecture, reference implementation, and parity map</h1>
+            <p class="text-lg leading-8 text-slate-700">
+              This report turns <span class="font-semibold text-slate-900">architecture-guide.md</span> into a visually structured HTML brief. It treats the Rust / egui implementation as the reference system and shows how the Python GTK and Flask/web variants mirror it, where they differ, and which runtime boundaries matter most.
+            </p>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <article id="metric-reference-implementation" data-component="metric-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white/85 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Reference</div>
+              <div class="mt-2 text-3xl font-semibold text-slate-950">Rust</div>
+              <p class="mt-1 text-sm text-slate-600">The most complete and current implementation.</p>
+            </article>
+            <article id="metric-implementations" data-component="metric-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white/85 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Frontends</div>
+              <div class="mt-2 text-3xl font-semibold text-slate-950">3</div>
+              <p class="mt-1 text-sm text-slate-600">Rust egui, Python GTK 4, and Flask/web.</p>
+            </article>
+            <article id="metric-session-modes" data-component="metric-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white/85 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Session modes</div>
+              <div class="mt-2 text-3xl font-semibold text-slate-950">2</div>
+              <p class="mt-1 text-sm text-slate-600">Live transcription and live translation.</p>
+            </article>
+            <article id="metric-shared-settings" data-component="metric-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white/85 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Shared config</div>
+              <div class="mt-2 text-3xl font-semibold text-slate-950">1</div>
+              <p class="mt-1 text-sm text-slate-600">All apps read and write the same settings file.</p>
+            </article>
+          </div>
+        </div>
+
+        <div id="hero-architecture-diagram" data-component="inline-svg-diagram" data-editable="true" class="report-card rounded-3xl border border-slate-200 bg-white/85 p-4 lg:p-5">
+          <div class="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">System snapshot</div>
+              <h2 class="mt-1 text-xl font-semibold text-slate-950">One realtime backend, three UI shells</h2>
+            </div>
+            <div class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Reference-first</div>
+          </div>
+          <svg viewBox="0 0 760 390" role="img" aria-labelledby="hero-architecture-diagram-title" class="w-full h-auto">
+            <title id="hero-architecture-diagram-title">Layered system architecture diagram</title>
+            <defs>
+              <linearGradient id="heroPanel" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0%" stop-color="#eff6ff" />
+                <stop offset="100%" stop-color="#ffffff" />
+              </linearGradient>
+              <linearGradient id="heroAccent" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0%" stop-color="#2563eb" />
+                <stop offset="100%" stop-color="#1d4ed8" />
+              </linearGradient>
+              <marker id="heroArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+            <rect x="12" y="12" width="736" height="366" rx="28" fill="url(#heroPanel)" stroke="#cbd5e1" />
+
+            <g id="hero-user-layer">
+              <rect x="36" y="46" width="210" height="74" rx="18" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="56" y="75" font-size="18" fill="#0f172a" font-weight="700">User interaction</text>
+              <text x="56" y="98" font-size="14" fill="#475569">Start listening, choose language, save, copy, play</text>
+            </g>
+
+            <g id="hero-ui-layer">
+              <rect x="36" y="154" width="210" height="84" rx="18" fill="#f8fafc" stroke="#cbd5e1" />
+              <text x="56" y="184" font-size="18" fill="#0f172a" font-weight="700">UI shells</text>
+              <text x="56" y="208" font-size="14" fill="#475569">Rust egui, Python GTK 4, Flask/web</text>
+            </g>
+
+            <g id="hero-realtime-core">
+              <rect x="286" y="90" width="216" height="152" rx="22" fill="#dbeafe" stroke="#93c5fd" />
+              <text x="309" y="126" font-size="18" fill="#0f172a" font-weight="700">Shared realtime core</text>
+              <text x="309" y="150" font-size="14" fill="#1d4ed8">Audio conversion</text>
+              <text x="309" y="172" font-size="14" fill="#1d4ed8">OpenAI session management</text>
+              <text x="309" y="194" font-size="14" fill="#1d4ed8">Event normalization</text>
+              <text x="309" y="216" font-size="14" fill="#1d4ed8">Transcript assembly</text>
+            </g>
+
+            <g id="hero-openai">
+              <rect x="548" y="102" width="174" height="128" rx="22" fill="url(#heroAccent)" stroke="#1d4ed8" />
+              <text x="571" y="139" font-size="18" fill="#ffffff" font-weight="700">OpenAI Realtime</text>
+              <text x="571" y="163" font-size="14" fill="#e0f2fe">Transcription</text>
+              <text x="571" y="185" font-size="14" fill="#e0f2fe">Translation</text>
+              <text x="571" y="207" font-size="14" fill="#e0f2fe">TTS</text>
+            </g>
+
+            <g id="hero-output-layer">
+              <rect x="548" y="260" width="174" height="74" rx="18" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="571" y="290" font-size="18" fill="#0f172a" font-weight="700">Outputs</text>
+              <text x="571" y="314" font-size="14" fill="#475569">Transcript, translation, playback</text>
+            </g>
+
+            <path d="M246 82 C272 82, 270 128, 286 128" fill="none" stroke="#64748b" stroke-width="2.4" marker-end="url(#heroArrow)" />
+            <path d="M246 194 C272 194, 270 172, 286 172" fill="none" stroke="#64748b" stroke-width="2.4" marker-end="url(#heroArrow)" />
+            <path d="M502 166 C526 166, 530 166, 548 166" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#heroArrow)" />
+            <path d="M632 230 C632 246, 632 248, 632 260" fill="none" stroke="#64748b" stroke-width="2.4" marker-end="url(#heroArrow)" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  </header>
+  <!-- EDIT-REGION: cover:end -->
+
+  <main class="max-w-7xl mx-auto px-6 pb-16">
+    <!-- EDIT-REGION: executive-summary:start -->
+    <section id="section-executive-summary" data-section="executive-summary" data-title="Executive Summary" class="section-shell mt-6">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Executive summary</div>
+          <h2 class="mt-2 text-3xl font-semibold tracking-tight text-slate-950">The architecture is intentionally converged around a shared realtime core.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">
+            The document describes one system split into three user-facing implementations. The Rust codebase remains the reference path because it is the most complete and most recent, while the Python GTK and Flask/web layers mirror the same audio pipeline, OpenAI Realtime session semantics, transcript assembly rules, and shared settings format.
+          </p>
+        </div>
+
+        <div class="mt-6 grid gap-4 lg:grid-cols-4">
+          <article id="summary-card-single-source" data-component="summary-card" data-editable="true" class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-sm font-semibold text-slate-950">Reference system</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-600">Rust / egui controls the canonical session flow, event parsing, transcript assembly, and TTS path.</p>
+          </article>
+          <article id="summary-card-shared-format" data-component="summary-card" data-editable="true" class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-sm font-semibold text-slate-950">Shared format</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-600">All implementations use the same settings JSON, so preferences survive switching between frontends.</p>
+          </article>
+          <article id="summary-card-audio-standardization" data-component="summary-card" data-editable="true" class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-sm font-semibold text-slate-950">Audio standard</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-600">The pipeline normalizes to mono PCM16 at 24 kHz and sends base64 chunks to OpenAI.</p>
+          </article>
+          <article id="summary-card-main-delta" data-component="summary-card" data-editable="true" class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-sm font-semibold text-slate-950">Main delta</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-600">Remaining differences are mostly runtime and UI concerns, not a difference in user-visible behavior.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: executive-summary:end -->
+
+    <!-- EDIT-REGION: context:start -->
+    <section id="section-system-overview" data-section="system-overview" data-title="System Overview" class="section-shell mt-10">
+      <div class="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <article id="system-overview-text" data-component="context-panel" data-editable="true" class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">System overview</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">dict-ai-te is a live dictation and live translation application built around OpenAI Realtime.</h2>
+          <div class="mt-4 space-y-4 text-base leading-7 text-slate-700">
+            <p>The user presses a button, speaks into the microphone, and sees transcription or translation accumulate in real time. Once the session ends, the transcript can be saved, copied, or played back through TTS.</p>
+            <p>All three implementations connect to the same external service: the OpenAI Realtime API. There is no local speech recognition model; the STT and translation pipeline runs on OpenAI's infrastructure.</p>
+            <p>The application runs in two session modes selected before recording starts: transcription connects to the transcription intent endpoint with <span class="font-semibold text-slate-900">gpt-4o-transcribe</span>, while translation uses the realtime endpoint with <span class="font-semibold text-slate-900">gpt-realtime</span>.</p>
+          </div>
+        </article>
+
+        <figure id="diagram-system-overview" data-component="inline-svg-diagram" data-editable="true" class="report-card rounded-3xl border border-slate-200 bg-white p-5 md:p-6">
+          <figcaption class="mb-4">
+            <h3 class="text-xl font-semibold text-slate-950">End-to-end architecture</h3>
+            <p class="mt-1 text-sm text-slate-600">Audio enters through a UI-specific capture layer, but the core flow is shared across implementations.</p>
+          </figcaption>
+          <svg viewBox="0 0 880 380" role="img" aria-labelledby="diagram-system-overview-title" class="w-full h-auto diagram-grid rounded-2xl border border-slate-200 bg-slate-50">
+            <title id="diagram-system-overview-title">Shared architecture flow from microphone to UI</title>
+            <defs>
+              <marker id="overviewArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            <g id="layer-input">
+              <rect x="30" y="128" width="130" height="110" rx="22" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="63" y="170" font-size="18" fill="#0f172a" font-weight="700">Microphone</text>
+              <text x="56" y="196" font-size="13" fill="#475569">Live audio source</text>
+            </g>
+
+            <g id="layer-capture">
+              <rect x="200" y="92" width="150" height="184" rx="24" fill="#eff6ff" stroke="#93c5fd" />
+              <text x="226" y="130" font-size="18" fill="#0f172a" font-weight="700">Audio pipeline</text>
+              <text x="224" y="156" font-size="13" fill="#1d4ed8">Downmix to mono</text>
+              <text x="224" y="180" font-size="13" fill="#1d4ed8">Resample to 24 kHz</text>
+              <text x="224" y="204" font-size="13" fill="#1d4ed8">PCM16 conversion</text>
+              <text x="224" y="228" font-size="13" fill="#1d4ed8">Base64 chunking</text>
+            </g>
+
+            <g id="layer-openai">
+              <rect x="420" y="88" width="180" height="192" rx="26" fill="#0f172a" stroke="#1e293b" />
+              <text x="447" y="129" font-size="18" fill="#ffffff" font-weight="700">OpenAI Realtime</text>
+              <text x="447" y="156" font-size="13" fill="#cbd5e1">Session update</text>
+              <text x="447" y="180" font-size="13" fill="#cbd5e1">Audio append</text>
+              <text x="447" y="204" font-size="13" fill="#cbd5e1">Transcript events</text>
+              <text x="447" y="228" font-size="13" fill="#cbd5e1">Translation events</text>
+              <text x="447" y="252" font-size="13" fill="#cbd5e1">Session state</text>
+            </g>
+
+            <g id="layer-normalization">
+              <rect x="650" y="92" width="170" height="184" rx="24" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="676" y="130" font-size="18" fill="#0f172a" font-weight="700">Normalization</text>
+              <text x="674" y="156" font-size="13" fill="#475569">Event parser</text>
+              <text x="674" y="180" font-size="13" fill="#475569">Transcript assembler</text>
+              <text x="674" y="204" font-size="13" fill="#475569">UI state updates</text>
+              <text x="674" y="228" font-size="13" fill="#475569">TTS and playback</text>
+            </g>
+
+            <path d="M160 182 L200 182" stroke="#64748b" stroke-width="3" marker-end="url(#overviewArrow)" />
+            <path d="M350 182 L420 182" stroke="#2563eb" stroke-width="3" marker-end="url(#overviewArrow)" />
+            <path d="M600 182 L650 182" stroke="#64748b" stroke-width="3" marker-end="url(#overviewArrow)" />
+
+            <g id="lane-session-mode">
+              <rect x="288" y="304" width="304" height="36" rx="18" fill="#dbeafe" stroke="#93c5fd" />
+              <text x="315" y="327" font-size="13" fill="#1d4ed8" font-weight="600">Two modes: transcription intent or translation with gpt-realtime</text>
+            </g>
+          </svg>
+        </figure>
+      </div>
+    </section>
+    <!-- EDIT-REGION: context:end -->
+
+    <!-- EDIT-REGION: repository-layout:start -->
+    <section id="section-repository-layout" data-section="repository-layout" data-title="Repository Layout" class="section-shell mt-10">
+      <div class="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        <article id="repository-layout-summary" data-component="repository-layout-panel" data-editable="true" class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Repository layout</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">The repository is split into a Rust application, a shared Python core, and UI packages.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">
+            The Rust implementation lives under <span class="font-semibold text-slate-900">src/</span>, the Python shared logic lives in <span class="font-semibold text-slate-900">dictaite_core/</span>, and the Python UI layers live in <span class="font-semibold text-slate-900">dictaite/</span>. The shared settings file keeps the implementations aligned across frontends.
+          </p>
+          <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-sm font-semibold uppercase tracking-wide text-slate-500">Key alignment points</p>
+            <ul class="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+              <li>Realtime transport, event parsing, transcript assembly, and audio conversion have matching Rust and Python implementations.</li>
+              <li>The settings format is shared and migrated from legacy TOML to JSON.</li>
+              <li>The GTK and web frontends are thin shells around the same shared runtime concepts.</li>
+            </ul>
+          </div>
+        </article>
+
+        <figure id="tree-repository-layout" data-component="tree-diagram" data-editable="true" class="report-card rounded-3xl border border-slate-200 bg-slate-950 p-6 text-slate-50">
+          <figcaption class="mb-4">
+            <h3 class="text-xl font-semibold">Repository map</h3>
+            <p class="mt-1 text-sm text-slate-300">A simplified tree of the top-level structure described in the source document.</p>
+          </figcaption>
+          <pre class="code-block overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 p-5 text-slate-100">dict-ai-te/
+├── src/                        Rust implementation
+│   ├── app.rs                  UI state machine
+│   ├── audio/                  capture, playback, clips
+│   └── realtime/               audio, events, transport, transcript
+├── dictaite_core/              shared Python library
+│   ├── realtime/               mirrors Rust realtime modules
+│   └── services/               TTS, text utils, client factory
+├── dictaite/                   Python UI packages
+│   ├── ui_gtk/                 GTK 4 frontend
+│   └── ui_web/                 Flask / browser frontend
+├── tests/                      API and realtime tests
+├── Cargo.toml                  Rust crate manifest
+└── pyproject.toml              Python project manifest</pre>
+        </figure>
+      </div>
+    </section>
+    <!-- EDIT-REGION: repository-layout:end -->
+
+    <!-- EDIT-REGION: implementation-comparison:start -->
+    <section id="section-three-implementations" data-section="three-implementations" data-title="The Three Implementations at a Glance" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Three implementations at a glance</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Same behavior, different runtime and UI tradeoffs.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">The table below reflects the implementation differences called out in the architecture guide. The user experience is aligned, but each frontend makes different tradeoffs in capture, rendering, and audio playback.</p>
+        </div>
+
+        <div class="mt-6 overflow-x-auto">
+          <table id="table-implementation-comparison" data-component="comparison-table" data-editable="true" class="min-w-full border-collapse text-left text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                <th class="py-3 pr-4 font-semibold">Aspect</th>
+                <th class="py-3 pr-4 font-semibold">Rust (egui)</th>
+                <th class="py-3 pr-4 font-semibold">Python GTK 4</th>
+                <th class="py-3 pr-4 font-semibold">Python Flask / web</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">UI framework</td>
+                <td class="py-4 pr-4 text-slate-700">Immediate-mode egui + eframe</td>
+                <td class="py-4 pr-4 text-slate-700">Retained-mode GTK 4 via PyGObject</td>
+                <td class="py-4 pr-4 text-slate-700">Flask + flask-sock + browser UI</td>
+              </tr>
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">Audio capture</td>
+                <td class="py-4 pr-4 text-slate-700">cpal with a worker thread</td>
+                <td class="py-4 pr-4 text-slate-700">sounddevice stream with GLib callbacks</td>
+                <td class="py-4 pr-4 text-slate-700">Browser MediaRecorder / AudioContext</td>
+              </tr>
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">Realtime session</td>
+                <td class="py-4 pr-4 text-slate-700">Tokio + tokio-tungstenite</td>
+                <td class="py-4 pr-4 text-slate-700">asyncio + websockets</td>
+                <td class="py-4 pr-4 text-slate-700">asyncio + websockets relay</td>
+              </tr>
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">TTS and playback</td>
+                <td class="py-4 pr-4 text-slate-700">reqwest + rodio + AudioClip cache</td>
+                <td class="py-4 pr-4 text-slate-700">OpenAI SDK + sounddevice + soundfile</td>
+                <td class="py-4 pr-4 text-slate-700">OpenAI SDK + browser audio element</td>
+              </tr>
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">Settings file</td>
+                <td class="py-4 pr-4 text-slate-700">~/.dictaite/settings.json</td>
+                <td class="py-4 pr-4 text-slate-700">~/.dictaite/settings.json</td>
+                <td class="py-4 pr-4 text-slate-700">~/.dictaite/settings.json</td>
+              </tr>
+              <tr>
+                <td class="py-4 pr-4 font-medium text-slate-900">Behavior</td>
+                <td class="py-4 pr-4 text-slate-700">Reference implementation</td>
+                <td class="py-4 pr-4 text-slate-700">Parallels Rust with UI-specific differences</td>
+                <td class="py-4 pr-4 text-slate-700">Relay architecture; browser handles capture/playback</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: implementation-comparison:end -->
+
+    <!-- EDIT-REGION: audio-pipeline:start -->
+    <section id="section-audio-pipeline" data-section="audio-pipeline" data-title="Audio Pipeline" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Audio pipeline</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Every frontend converges on the same chunk format before the socket send.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">The Rust implementation is the most explicit about threading and conversion, while the Python GTK and web variants mirror the same logical flow with different APIs. The relevant invariant is stable: mono, 24 kHz, PCM16, base64-encoded chunks.</p>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-3">
+          <article id="audio-pipeline-rust" data-component="pipeline-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rust</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Threaded capture and conversion</h3>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">cpal callback
+  └─ samples (f32)
+      └─ bounded channel
+          └─ audio worker thread
+              ├─ downmix to mono
+              ├─ resample to 24 kHz
+              ├─ buffer 40 ms chunks
+              ├─ convert to PCM16 LE
+              └─ base64 encode + send</pre>
+          </article>
+          <article id="audio-pipeline-gtk" data-component="pipeline-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Python GTK</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Direct 24 kHz mono capture</h3>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">sounddevice.InputStream(24_000, channels=1)
+  └─ frames already at target rate
+      └─ normalize_audio
+      └─ float32 → PCM16
+      └─ base64 encode
+      └─ queue.put_nowait(chunk)
+      └─ asyncio worker reads queue</pre>
+          </article>
+          <article id="audio-pipeline-web" data-component="pipeline-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Web</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Browser capture and server relay</h3>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">Browser audio graph
+  └─ downsample to 24 kHz
+  └─ float → i16
+  └─ base64 encode
+  └─ WebSocket { type: "audio" }
+Server
+  └─ forwards chunks to OpenAI Realtime</pre>
+          </article>
+        </div>
+
+        <figure id="diagram-audio-pipeline" data-component="inline-svg-diagram" data-editable="true" class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <figcaption class="mb-3">
+            <h3 class="text-xl font-semibold text-slate-950">Common audio path</h3>
+            <p class="mt-1 text-sm text-slate-600">The diagram below shows the shared encoding contract that all implementations honor before transport.</p>
+          </figcaption>
+          <svg viewBox="0 0 980 260" role="img" aria-labelledby="diagram-audio-pipeline-title" class="w-full h-auto">
+            <title id="diagram-audio-pipeline-title">Audio conversion pipeline to base64 PCM16</title>
+            <defs>
+              <marker id="audioArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            <g id="audio-step-input">
+              <rect x="18" y="78" width="120" height="100" rx="20" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="44" y="118" font-size="18" fill="#0f172a" font-weight="700">Audio</text>
+              <text x="42" y="142" font-size="13" fill="#475569">float32 frames</text>
+            </g>
+
+            <g id="audio-step-downmix">
+              <rect x="164" y="78" width="124" height="100" rx="20" fill="#eff6ff" stroke="#93c5fd" />
+              <text x="189" y="118" font-size="18" fill="#0f172a" font-weight="700">Mono</text>
+              <text x="183" y="142" font-size="13" fill="#1d4ed8">downmix</text>
+            </g>
+
+            <g id="audio-step-resample">
+              <rect x="314" y="78" width="146" height="100" rx="20" fill="#eff6ff" stroke="#93c5fd" />
+              <text x="338" y="118" font-size="18" fill="#0f172a" font-weight="700">24 kHz</text>
+              <text x="336" y="142" font-size="13" fill="#1d4ed8">resample</text>
+            </g>
+
+            <g id="audio-step-pcm16">
+              <rect x="486" y="78" width="144" height="100" rx="20" fill="#0f172a" stroke="#1e293b" />
+              <text x="511" y="118" font-size="18" fill="#ffffff" font-weight="700">PCM16</text>
+              <text x="506" y="142" font-size="13" fill="#cbd5e1">little-endian</text>
+            </g>
+
+            <g id="audio-step-base64">
+              <rect x="654" y="78" width="144" height="100" rx="20" fill="#ffffff" stroke="#cbd5e1" />
+              <text x="678" y="118" font-size="18" fill="#0f172a" font-weight="700">Base64</text>
+              <text x="681" y="142" font-size="13" fill="#475569">chunked send</text>
+            </g>
+
+            <g id="audio-step-socket">
+              <rect x="826" y="78" width="136" height="100" rx="20" fill="#dbeafe" stroke="#93c5fd" />
+              <text x="852" y="118" font-size="18" fill="#0f172a" font-weight="700">Socket</text>
+              <text x="847" y="142" font-size="13" fill="#1d4ed8">OpenAI Realtime</text>
+            </g>
+
+            <path d="M138 128 L164 128" stroke="#64748b" stroke-width="3" marker-end="url(#audioArrow)" />
+            <path d="M288 128 L314 128" stroke="#64748b" stroke-width="3" marker-end="url(#audioArrow)" />
+            <path d="M460 128 L486 128" stroke="#64748b" stroke-width="3" marker-end="url(#audioArrow)" />
+            <path d="M630 128 L654 128" stroke="#64748b" stroke-width="3" marker-end="url(#audioArrow)" />
+            <path d="M798 128 L826 128" stroke="#64748b" stroke-width="3" marker-end="url(#audioArrow)" />
+
+            <text x="18" y="220" font-size="13" fill="#475569">Rust explicitly threads this path through a worker thread; GTK and web versions implement the same contract with different APIs.</text>
+          </svg>
+        </figure>
+      </div>
+    </section>
+    <!-- EDIT-REGION: audio-pipeline:end -->
+
+    <!-- EDIT-REGION: realtime-sessions:start -->
+    <section id="section-realtime-sessions" data-section="realtime-sessions" data-title="OpenAI Realtime Sessions" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">OpenAI Realtime sessions</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Transcription and translation share the same lifecycle, then diverge on session intent and output handling.</h2>
+        </div>
+
+        <div class="mt-6 grid gap-4 lg:grid-cols-2">
+          <article id="session-transcription" data-component="session-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="flex items-center justify-between gap-4">
+              <h3 class="text-xl font-semibold text-slate-950">Transcription session</h3>
+              <span class="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">gpt-4o-transcribe</span>
+            </div>
+            <p class="mt-3 text-sm leading-6 text-slate-700">Connects to the transcription intent endpoint, sends a session update with server VAD and optional source language, and commits the buffer on stop.</p>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">wss://api.openai.com/v1/realtime?intent=transcription
+Authorization: Bearer &lt;key&gt;
+
+session.update
+  type: "transcription"
+  audio.input.format.rate = 24000
+  transcription.model = "gpt-4o-transcribe"</pre>
+          </article>
+
+          <article id="session-translation" data-component="session-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="flex items-center justify-between gap-4">
+              <h3 class="text-xl font-semibold text-slate-950">Translation session</h3>
+              <span class="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">gpt-realtime</span>
+            </div>
+            <p class="mt-3 text-sm leading-6 text-slate-700">Uses the realtime endpoint, instructs the model to return only translated text, and sets output modalities to text. Source transcription and translation can accumulate together.</p>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">wss://api.openai.com/v1/realtime?model=gpt-realtime
+
+session.update
+  type: "realtime"
+  output_modalities: ["text"]
+  instructions: "Translate the user's speech into &lt;target&gt;..."</pre>
+          </article>
+        </div>
+
+        <figure id="diagram-session-lifecycle" data-component="inline-svg-diagram" data-editable="true" class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <figcaption class="mb-3">
+            <h3 class="text-xl font-semibold text-slate-950">Session lifecycle</h3>
+            <p class="mt-1 text-sm text-slate-600">The same lifecycle appears in Rust and Python: connect, update, stream audio, commit, close, and emit session state transitions.</p>
+          </figcaption>
+          <svg viewBox="0 0 960 290" role="img" aria-labelledby="diagram-session-lifecycle-title" class="w-full h-auto">
+            <title id="diagram-session-lifecycle-title">Realtime session lifecycle for connect, stream, commit, and close</title>
+            <defs>
+              <marker id="sessionArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            <g id="session-step-connect"><rect x="24" y="96" width="130" height="88" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="51" y="132" font-size="18" fill="#0f172a" font-weight="700">Connect</text><text x="45" y="156" font-size="13" fill="#475569">WebSocket open</text></g>
+            <g id="session-step-update"><rect x="184" y="96" width="148" height="88" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="218" y="132" font-size="18" fill="#0f172a" font-weight="700">Update</text><text x="210" y="156" font-size="13" fill="#1d4ed8">session.update</text></g>
+            <g id="session-step-audio"><rect x="360" y="96" width="140" height="88" rx="18" fill="#0f172a" stroke="#1e293b" /><text x="396" y="132" font-size="18" fill="#ffffff" font-weight="700">Audio</text><text x="391" y="156" font-size="13" fill="#cbd5e1">append chunks</text></g>
+            <g id="session-step-events"><rect x="528" y="96" width="154" height="88" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="560" y="132" font-size="18" fill="#0f172a" font-weight="700">Events</text><text x="548" y="156" font-size="13" fill="#475569">deltas + state</text></g>
+            <g id="session-step-stop"><rect x="710" y="96" width="118" height="88" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="743" y="132" font-size="18" fill="#0f172a" font-weight="700">Stop</text><text x="731" y="156" font-size="13" fill="#1d4ed8">commit</text></g>
+            <g id="session-step-close"><rect x="852" y="96" width="84" height="88" rx="18" fill="#dbeafe" stroke="#93c5fd" /><text x="866" y="132" font-size="18" fill="#0f172a" font-weight="700">Close</text><text x="863" y="156" font-size="13" fill="#1d4ed8">disconnected</text></g>
+
+            <path d="M154 140 L184 140" stroke="#64748b" stroke-width="3" marker-end="url(#sessionArrow)" />
+            <path d="M332 140 L360 140" stroke="#64748b" stroke-width="3" marker-end="url(#sessionArrow)" />
+            <path d="M500 140 L528 140" stroke="#64748b" stroke-width="3" marker-end="url(#sessionArrow)" />
+            <path d="M682 140 L710 140" stroke="#64748b" stroke-width="3" marker-end="url(#sessionArrow)" />
+            <path d="M828 140 L852 140" stroke="#64748b" stroke-width="3" marker-end="url(#sessionArrow)" />
+
+            <text x="24" y="234" font-size="13" fill="#475569">Rust emits SessionState after the update and after disconnect; Python mirrors the same semantics through NormalizedEvent.</text>
+          </svg>
+        </figure>
+      </div>
+    </section>
+    <!-- EDIT-REGION: realtime-sessions:end -->
+
+    <!-- EDIT-REGION: event-normalization:start -->
+    <section id="section-event-parsing" data-section="event-parsing" data-title="Event Parsing and Normalization" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Event parsing and normalization</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Raw OpenAI events are normalized into a small, stable vocabulary.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">Both implementations reduce the event surface to the same conceptual types, which keeps the UI layer simple and makes it easier to support both transcription and translation without branching on every raw event variant.</p>
+        </div>
+
+        <div class="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <article id="event-enum-card" data-component="event-enum" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-slate-50">
+            <h3 class="text-xl font-semibold">Normalized event model</h3>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 text-slate-100">RealtimeEvent {
+  SourceDelta { item_id, text }
+  SourceCompleted { item_id, text }
+  TranslationDelta { text }
+  TranslatedAudioDelta
+  SessionState { state }
+  Error { message }
+  Unknown { event_type }
+}</pre>
+          </article>
+
+          <div class="overflow-x-auto rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <table id="table-event-mapping" data-component="event-mapping-table" data-editable="true" class="min-w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th class="py-3 pr-4 font-semibold">Raw type</th>
+                  <th class="py-3 pr-4 font-semibold">Normalized variant</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <tr id="event-map-source-delta"><td class="py-4 pr-4 font-medium text-slate-900">conversation.item.input_audio_transcription.delta</td><td class="py-4 pr-4 text-slate-700">SourceDelta</td></tr>
+                <tr id="event-map-source-completed"><td class="py-4 pr-4 font-medium text-slate-900">conversation.item.input_audio_transcription.completed</td><td class="py-4 pr-4 text-slate-700">SourceCompleted</td></tr>
+                <tr id="event-map-session-input-delta"><td class="py-4 pr-4 font-medium text-slate-900">session.input_transcript.delta</td><td class="py-4 pr-4 text-slate-700">SourceDelta</td></tr>
+                <tr id="event-map-session-output-delta"><td class="py-4 pr-4 font-medium text-slate-900">session.output_transcript.delta</td><td class="py-4 pr-4 text-slate-700">TranslationDelta</td></tr>
+                <tr id="event-map-response-output-text"><td class="py-4 pr-4 font-medium text-slate-900">response.output_text.delta</td><td class="py-4 pr-4 text-slate-700">TranslationDelta</td></tr>
+                <tr id="event-map-response-audio-transcript"><td class="py-4 pr-4 font-medium text-slate-900">response.output_audio_transcript.delta</td><td class="py-4 pr-4 text-slate-700">TranslationDelta</td></tr>
+                <tr id="event-map-output-audio-delta"><td class="py-4 pr-4 font-medium text-slate-900">session.output_audio.delta / response.audio.delta / response.output_audio.delta</td><td class="py-4 pr-4 text-slate-700">TranslatedAudioDelta</td></tr>
+                <tr id="event-map-error"><td class="py-4 pr-4 font-medium text-slate-900">error</td><td class="py-4 pr-4 text-slate-700">Error</td></tr>
+                <tr id="event-map-fallback"><td class="py-4 pr-4 font-medium text-slate-900">Unmatched session.* or response.*</td><td class="py-4 pr-4 text-slate-700">SessionState</td></tr>
+                <tr id="event-map-unknown"><td class="py-4 pr-4 font-medium text-slate-900">Anything else</td><td class="py-4 pr-4 text-slate-700">Unknown</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: event-normalization:end -->
+
+    <!-- EDIT-REGION: transcript-assembly:start -->
+    <section id="section-transcript-assembly" data-section="transcript-assembly" data-title="Transcript Assembly" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Transcript assembly</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Segments preserve order, completion state, and anonymous fragments.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">The assembler handles out-of-order deltas and completions while preserving insertion order. Rust keeps a separate order list because its map is keyed; Python uses insertion-ordered structures directly. Both join non-empty segments in order, then append anonymous fragments.</p>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <article id="transcript-assembler-rust" data-component="transcript-assembler-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rust structure</div>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">TranscriptAssembler {
+  order: Vec&lt;String&gt;
+  segments: BTreeMap&lt;String, Segment&gt;
+  anonymous: Vec&lt;String&gt;
+}
+
+Segment { text, final_text }</pre>
+            <p class="mt-4 text-sm leading-6 text-slate-700">The order list keeps the first-seen sequence stable even though the map itself is alphabetically keyed.</p>
+          </article>
+
+          <article id="transcript-assembler-python" data-component="transcript-assembler-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Python structure</div>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl bg-slate-900 p-4 text-slate-100">TranscriptAssembler {
+  _segments: OrderedDict[str, _Segment]
+  _anonymous: list[str]
+}
+
+complete() appends anonymous completions unconditionally</pre>
+            <p class="mt-4 text-sm leading-6 text-slate-700">The Python version matches the Rust semantics while relying on insertion ordering in the underlying dictionary.</p>
+          </article>
+        </div>
+
+        <figure id="diagram-transcript-assembly" data-component="inline-svg-diagram" data-editable="true" class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <figcaption class="mb-3">
+            <h3 class="text-xl font-semibold text-slate-950">Assembly behavior</h3>
+            <p class="mt-1 text-sm text-slate-600">Deltas append, completions finalize, and the final transcript is the ordered join of non-empty segments plus anonymous text.</p>
+          </figcaption>
+          <svg viewBox="0 0 960 250" role="img" aria-labelledby="diagram-transcript-assembly-title" class="w-full h-auto">
+            <title id="diagram-transcript-assembly-title">Transcript assembly flow and segment ordering</title>
+            <defs>
+              <marker id="transcriptArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            <g id="transcript-step-delta"><rect x="22" y="70" width="160" height="92" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="60" y="108" font-size="18" fill="#0f172a" font-weight="700">add_delta</text><text x="49" y="132" font-size="13" fill="#1d4ed8">append text to segment</text></g>
+            <g id="transcript-step-complete"><rect x="214" y="70" width="176" height="92" rx="18" fill="#0f172a" stroke="#1e293b" /><text x="252" y="108" font-size="18" fill="#ffffff" font-weight="700">complete</text><text x="235" y="132" font-size="13" fill="#cbd5e1">final text + mark final</text></g>
+            <g id="transcript-step-order"><rect x="418" y="70" width="172" height="92" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="450" y="108" font-size="18" fill="#0f172a" font-weight="700">Insertion order</text><text x="445" y="132" font-size="13" fill="#475569">stable segment sequence</text></g>
+            <g id="transcript-step-anonymous"><rect x="618" y="70" width="154" height="92" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="646" y="108" font-size="18" fill="#0f172a" font-weight="700">Anonymous</text><text x="646" y="132" font-size="13" fill="#1d4ed8">fragments appended</text></g>
+            <g id="transcript-step-final"><rect x="800" y="70" width="138" height="92" rx="18" fill="#dbeafe" stroke="#93c5fd" /><text x="833" y="108" font-size="18" fill="#0f172a" font-weight="700">text()</text><text x="821" y="132" font-size="13" fill="#1d4ed8">final transcript</text></g>
+
+            <path d="M182 116 L214 116" stroke="#64748b" stroke-width="3" marker-end="url(#transcriptArrow)" />
+            <path d="M390 116 L418 116" stroke="#64748b" stroke-width="3" marker-end="url(#transcriptArrow)" />
+            <path d="M590 116 L618 116" stroke="#64748b" stroke-width="3" marker-end="url(#transcriptArrow)" />
+            <path d="M772 116 L800 116" stroke="#64748b" stroke-width="3" marker-end="url(#transcriptArrow)" />
+
+            <text x="22" y="206" font-size="13" fill="#475569">Both implementations deliberately preserve insertion order, not map key order, so transcript output stays aligned with arrival order.</text>
+          </svg>
+        </figure>
+      </div>
+    </section>
+    <!-- EDIT-REGION: transcript-assembly:end -->
+
+    <!-- EDIT-REGION: tts-playback:start -->
+    <section id="section-tts-playback" data-section="tts-playback" data-title="Text-to-Speech and Playback" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Text-to-speech and playback</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">TTS is a separate path, but it reuses the same output text and voice settings.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">Rust caches the decoded clip so repeated playback can skip the network call, while the GTK and web paths fetch fresh audio each time. The user-facing outcome remains the same: speak the current transcript aloud in the selected voice.</p>
+        </div>
+
+        <div class="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <figure id="diagram-tts-flow" data-component="inline-svg-diagram" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <figcaption class="mb-3">
+              <h3 class="text-xl font-semibold text-slate-950">TTS flow</h3>
+              <p class="mt-1 text-sm text-slate-600">The audio playback path uses the same transcript text but diverges by runtime.</p>
+            </figcaption>
+            <svg viewBox="0 0 980 260" role="img" aria-labelledby="diagram-tts-flow-title" class="w-full h-auto">
+              <title id="diagram-tts-flow-title">Text to speech and playback flow</title>
+              <defs>
+                <marker id="ttsArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+                </marker>
+              </defs>
+
+              <g id="tts-step-text"><rect x="20" y="78" width="140" height="98" rx="20" fill="#ffffff" stroke="#cbd5e1" /><text x="57" y="119" font-size="18" fill="#0f172a" font-weight="700">Transcript</text><text x="45" y="144" font-size="13" fill="#475569">active text</text></g>
+              <g id="tts-step-cache"><rect x="186" y="78" width="164" height="98" rx="20" fill="#eff6ff" stroke="#93c5fd" /><text x="224" y="119" font-size="18" fill="#0f172a" font-weight="700">Cache check</text><text x="210" y="144" font-size="13" fill="#1d4ed8">same clip + voice?</text></g>
+              <g id="tts-step-request"><rect x="378" y="78" width="166" height="98" rx="20" fill="#0f172a" stroke="#1e293b" /><text x="420" y="119" font-size="18" fill="#ffffff" font-weight="700">TTS request</text><text x="410" y="144" font-size="13" fill="#cbd5e1">/v1/audio/speech</text></g>
+              <g id="tts-step-decode"><rect x="572" y="78" width="168" height="98" rx="20" fill="#ffffff" stroke="#cbd5e1" /><text x="620" y="119" font-size="18" fill="#0f172a" font-weight="700">Decode</text><text x="605" y="144" font-size="13" fill="#475569">wav / mp3 bytes</text></g>
+              <g id="tts-step-play"><rect x="768" y="78" width="192" height="98" rx="20" fill="#dbeafe" stroke="#93c5fd" /><text x="829" y="119" font-size="18" fill="#0f172a" font-weight="700">Playback</text><text x="794" y="144" font-size="13" fill="#1d4ed8">rodio / sounddevice / audio</text></g>
+
+              <path d="M160 127 L186 127" stroke="#64748b" stroke-width="3" marker-end="url(#ttsArrow)" />
+              <path d="M350 127 L378 127" stroke="#64748b" stroke-width="3" marker-end="url(#ttsArrow)" />
+              <path d="M544 127 L572 127" stroke="#64748b" stroke-width="3" marker-end="url(#ttsArrow)" />
+              <path d="M740 127 L768 127" stroke="#64748b" stroke-width="3" marker-end="url(#ttsArrow)" />
+
+              <text x="20" y="216" font-size="13" fill="#475569">Rust avoids a second network call when the same clip and voice are reused; Python GTK does not cache the decoded clip.</text>
+            </svg>
+          </figure>
+
+          <div class="space-y-4">
+            <article id="tts-rust-details" data-component="tts-details" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <h3 class="text-lg font-semibold text-slate-950">Rust path</h3>
+              <p class="mt-2 text-sm leading-6 text-slate-700">Uses a blocking reqwest client, decodes WAV or MP3 bytes into AudioClip, and keeps a cached clip for repeated playback with the same voice.</p>
+            </article>
+            <article id="tts-python-details" data-component="tts-details" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <h3 class="text-lg font-semibold text-slate-950">Python GTK and web</h3>
+              <p class="mt-2 text-sm leading-6 text-slate-700">GTK plays the returned WAV bytes through sounddevice and soundfile. The web frontend asks the browser to play the WAV response with a normal audio element.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: tts-playback:end -->
+
+    <!-- EDIT-REGION: settings-configuration:start -->
+    <section id="section-settings-configuration" data-section="settings-configuration" data-title="Settings and Configuration" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Settings and configuration</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">A single JSON settings file keeps the implementations aligned.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">All three apps use <span class="font-semibold text-slate-900">~/.dictaite/settings.json</span>. Legacy TOML settings are migrated transparently on first load, and the config directory can be overridden with <span class="font-semibold text-slate-900">DICTAITE_HOME</span>.</p>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <article id="settings-json-example" data-component="config-example" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-950 p-5 text-slate-50">
+            <h3 class="text-xl font-semibold">Shared settings format</h3>
+            <pre class="code-block mt-4 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 p-4 text-slate-100">{
+  "default_language": null,
+  "translate_by_default": false,
+  "default_target_language": "en",
+  "female_voice": "nova",
+  "male_voice": "onyx"
+}</pre>
+          </article>
+
+          <div class="grid gap-4 sm:grid-cols-2">
+            <article id="settings-rust" data-component="settings-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rust</div>
+              <p class="mt-2 text-sm leading-6 text-slate-700">Settings live in a struct with optional language fields and lowercase voice names normalized by fill_defaults.</p>
+            </article>
+            <article id="settings-python" data-component="settings-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Python</div>
+              <p class="mt-2 text-sm leading-6 text-slate-700">The dataclass mirrors the Rust shape and serializes with pretty JSON, keeping the frontends interoperable.</p>
+            </article>
+            <article id="settings-legacy-migration" data-component="settings-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Migration</div>
+              <p class="mt-2 text-sm leading-6 text-slate-700">Legacy TOML is parsed and migrated to JSON without deleting the older file.</p>
+            </article>
+            <article id="settings-env-override" data-component="settings-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Override</div>
+              <p class="mt-2 text-sm leading-6 text-slate-700">DICTAITE_HOME redirects the config directory for all implementations.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: settings-configuration:end -->
+
+    <!-- EDIT-REGION: ui-layers:start -->
+    <section id="section-ui-layers" data-section="ui-layers" data-title="UI Layers" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">UI layers</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">The UI implementations share behavior but differ in presentation model and runtime mechanics.</h2>
+        </div>
+
+        <div class="mt-6 grid gap-5 xl:grid-cols-3">
+          <article id="ui-rust-egui" data-component="ui-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Rust egui</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Immediate-mode application</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-700">The entire interface is rebuilt every frame from the DictaiteApp state machine. It includes explicit state for live capture, event channels, transcript text, TTS playback, and the settings modal.</p>
+          </article>
+          <article id="ui-python-gtk" data-component="ui-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Python GTK 4</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Retained-mode window</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-700">Gtk.ApplicationWindow keeps a persistent widget tree. Background threads push updates back via GLib.idle_add for audio playback, timers, and live session events.</p>
+          </article>
+          <article id="ui-python-web" data-component="ui-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Python Flask / web</div>
+            <h3 class="mt-2 text-xl font-semibold text-slate-950">Thin server, browser UI</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-700">The server proxies audio to OpenAI Realtime and returns normalized events to the browser. Audio capture and playback are owned by browser APIs.</p>
+          </article>
+        </div>
+
+        <div class="mt-6 overflow-x-auto rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <table id="table-ui-differences" data-component="ui-differences-table" data-editable="true" class="min-w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                <th class="py-3 pr-4 font-semibold">Aspect</th>
+                <th class="py-3 pr-4 font-semibold">Rust</th>
+                <th class="py-3 pr-4 font-semibold">Python GTK</th>
+                <th class="py-3 pr-4 font-semibold">Python Web</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr><td class="py-4 pr-4 font-medium text-slate-900">Level meter during recording</td><td class="py-4 pr-4 text-slate-700">AtomicU32 read by repaint loop</td><td class="py-4 pr-4 text-slate-700">GLib.idle_add updates LevelBar</td><td class="py-4 pr-4 text-slate-700">Browser audio graph and UI</td></tr>
+              <tr><td class="py-4 pr-4 font-medium text-slate-900">Timer</td><td class="py-4 pr-4 text-slate-700">Instant-based on each repaint</td><td class="py-4 pr-4 text-slate-700">Background thread posts every second</td><td class="py-4 pr-4 text-slate-700">Browser-side UI timer</td></tr>
+              <tr><td class="py-4 pr-4 font-medium text-slate-900">Voice toggle</td><td class="py-4 pr-4 text-slate-700">radio_value</td><td class="py-4 pr-4 text-slate-700">Gtk.CheckButton radio group</td><td class="py-4 pr-4 text-slate-700">Form control in HTML</td></tr>
+              <tr><td class="py-4 pr-4 font-medium text-slate-900">Settings modal</td><td class="py-4 pr-4 text-slate-700">egui Window</td><td class="py-4 pr-4 text-slate-700">GTK window content</td><td class="py-4 pr-4 text-slate-700">Dedicated settings page</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: ui-layers:end -->
+
+    <!-- EDIT-REGION: end-to-end-flow:start -->
+    <section id="section-end-to-end-flow" data-section="end-to-end-flow" data-title="End-to-End Data Flow" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">End-to-end data flow</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">The transcription and translation paths are the same until the event vocabulary diverges.</h2>
+        </div>
+
+        <figure id="diagram-end-to-end-flow" data-component="inline-svg-diagram" data-editable="true" class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+          <figcaption class="mb-3">
+            <h3 class="text-xl font-semibold text-slate-950">Lane view</h3>
+            <p class="mt-1 text-sm text-slate-600">The flow below combines the general audio path with the event normalisation and UI update steps.</p>
+          </figcaption>
+          <svg viewBox="0 0 1120 430" role="img" aria-labelledby="diagram-end-to-end-flow-title" class="w-full h-auto">
+            <title id="diagram-end-to-end-flow-title">End-to-end data flow from microphone to transcript UI</title>
+            <defs>
+              <marker id="flowArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+              </marker>
+            </defs>
+
+            <g id="flow-lane-mic"><rect x="24" y="42" width="120" height="84" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="54" y="78" font-size="18" fill="#0f172a" font-weight="700">Mic</text><text x="40" y="102" font-size="13" fill="#475569">float32</text></g>
+            <g id="flow-lane-audio"><rect x="168" y="42" width="144" height="84" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="204" y="78" font-size="18" fill="#0f172a" font-weight="700">Normalize</text><text x="192" y="102" font-size="13" fill="#1d4ed8">mono + 24 kHz</text></g>
+            <g id="flow-lane-pcm"><rect x="336" y="42" width="140" height="84" rx="18" fill="#0f172a" stroke="#1e293b" /><text x="373" y="78" font-size="18" fill="#ffffff" font-weight="700">PCM16</text><text x="358" y="102" font-size="13" fill="#cbd5e1">chunking</text></g>
+            <g id="flow-lane-send"><rect x="500" y="42" width="156" height="84" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="542" y="78" font-size="18" fill="#0f172a" font-weight="700">WebSocket</text><text x="530" y="102" font-size="13" fill="#475569">append audio</text></g>
+            <g id="flow-lane-openai"><rect x="686" y="24" width="188" height="120" rx="24" fill="#dbeafe" stroke="#93c5fd" /><text x="739" y="70" font-size="18" fill="#0f172a" font-weight="700">OpenAI</text><text x="722" y="96" font-size="13" fill="#1d4ed8">VAD + STT + translation</text></g>
+            <g id="flow-lane-event"><rect x="902" y="42" width="190" height="84" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="939" y="78" font-size="18" fill="#0f172a" font-weight="700">Normalized event</text><text x="937" y="102" font-size="13" fill="#475569">SourceDelta or TranslationDelta</text></g>
+
+            <path d="M144 84 L168 84" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+            <path d="M312 84 L336 84" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+            <path d="M476 84 L500 84" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+            <path d="M656 84 L686 84" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+            <path d="M874 84 L902 84" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+
+            <g id="flow-lane-assembler"><rect x="204" y="196" width="226" height="82" rx="18" fill="#ffffff" stroke="#cbd5e1" /><text x="246" y="232" font-size="18" fill="#0f172a" font-weight="700">TranscriptAssembler</text><text x="230" y="256" font-size="13" fill="#475569">ordered join + finalization</text></g>
+            <g id="flow-lane-ui"><rect x="470" y="196" width="274" height="82" rx="18" fill="#eff6ff" stroke="#93c5fd" /><text x="554" y="232" font-size="18" fill="#0f172a" font-weight="700">UI transcript pane</text><text x="500" y="256" font-size="13" fill="#1d4ed8">source transcript and translated transcript</text></g>
+            <g id="flow-lane-tts"><rect x="784" y="196" width="180" height="82" rx="18" fill="#0f172a" stroke="#1e293b" /><text x="830" y="232" font-size="18" fill="#ffffff" font-weight="700">TTS playback</text><text x="817" y="256" font-size="13" fill="#cbd5e1">optional path</text></g>
+
+            <path d="M902 126 C820 150, 620 176, 430 216" stroke="#64748b" stroke-width="3" fill="none" marker-end="url(#flowArrow)" />
+            <path d="M430 236 L470 236" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+            <path d="M744 236 L784 236" stroke="#64748b" stroke-width="3" marker-end="url(#flowArrow)" />
+
+            <text x="24" y="332" font-size="13" fill="#475569">The translation branch adds translated text and keeps the source transcript alongside it. TTS consumes the active transcript text after recording completes.</text>
+          </svg>
+        </figure>
+
+        <div class="mt-6 grid gap-4 lg:grid-cols-2">
+          <article id="transcription-flow-summary" data-component="flow-summary" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-xl font-semibold text-slate-950">Transcription flow</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-700">Microphone samples are downmixed, resampled, converted to PCM16, and base64-encoded before reaching the transcription endpoint. The UI updates from SourceDelta and SourceCompleted events.</p>
+          </article>
+          <article id="translation-flow-summary" data-component="flow-summary" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-xl font-semibold text-slate-950">Translation flow</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-700">The translation endpoint emits translated text deltas in addition to source transcript updates. The active transcript becomes the translated transcript while recording is live.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: end-to-end-flow:end -->
+
+    <!-- EDIT-REGION: remaining-differences:start -->
+    <section id="section-remaining-differences" data-section="remaining-differences" data-title="Python vs Rust - Remaining Differences" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Remaining differences</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">The remaining differences are implementation-level rather than behavioral.</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">After the parity work, the implementations are closely aligned. The differences that remain matter mainly for performance, runtime integration, and how each frontend renders or plays back audio.</p>
+        </div>
+
+        <div class="mt-6 overflow-x-auto rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <table id="table-remaining-differences" data-component="differences-table" data-editable="true" class="min-w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                <th class="py-3 pr-4 font-semibold">Area</th>
+                <th class="py-3 pr-4 font-semibold">Rust</th>
+                <th class="py-3 pr-4 font-semibold">Python</th>
+                <th class="py-3 pr-4 font-semibold">Note</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr id="diff-audio-capture-library"><td class="py-4 pr-4 font-medium text-slate-900">Audio capture library</td><td class="py-4 pr-4 text-slate-700">cpal, multi-format native negotiation</td><td class="py-4 pr-4 text-slate-700">sounddevice, always 24 kHz mono</td><td class="py-4 pr-4 text-slate-700">Different capture APIs, same normalized output.</td></tr>
+              <tr id="diff-async-runtime"><td class="py-4 pr-4 font-medium text-slate-900">Async runtime</td><td class="py-4 pr-4 text-slate-700">Tokio multi-thread</td><td class="py-4 pr-4 text-slate-700">asyncio single-thread per session</td><td class="py-4 pr-4 text-slate-700">The transport layer remains semantically aligned.</td></tr>
+              <tr id="diff-websocket-library"><td class="py-4 pr-4 font-medium text-slate-900">WebSocket library</td><td class="py-4 pr-4 text-slate-700">tokio-tungstenite</td><td class="py-4 pr-4 text-slate-700">websockets</td><td class="py-4 pr-4 text-slate-700">Both support TLS and the same Authorization header.</td></tr>
+              <tr id="diff-tts-client"><td class="py-4 pr-4 font-medium text-slate-900">TTS client</td><td class="py-4 pr-4 text-slate-700">reqwest blocking</td><td class="py-4 pr-4 text-slate-700">OpenAI Python SDK</td><td class="py-4 pr-4 text-slate-700">Both call the same /v1/audio/speech endpoint.</td></tr>
+              <tr id="diff-playback"><td class="py-4 pr-4 font-medium text-slate-900">Playback</td><td class="py-4 pr-4 text-slate-700">rodio + cached AudioClip</td><td class="py-4 pr-4 text-slate-700">sounddevice or browser audio element</td><td class="py-4 pr-4 text-slate-700">Rust caches decoded clips; GTK re-decodes on each play.</td></tr>
+              <tr id="diff-ui-paradigm"><td class="py-4 pr-4 font-medium text-slate-900">UI paradigm</td><td class="py-4 pr-4 text-slate-700">Immediate mode</td><td class="py-4 pr-4 text-slate-700">Retained mode</td><td class="py-4 pr-4 text-slate-700">No practical behavior difference for users.</td></tr>
+              <tr id="diff-level-meter"><td class="py-4 pr-4 font-medium text-slate-900">Level meter source</td><td class="py-4 pr-4 text-slate-700">AtomicU32 in callback</td><td class="py-4 pr-4 text-slate-700">GLib.idle_add / callback peak</td><td class="py-4 pr-4 text-slate-700">Both show live peak amplitude, via different plumbing.</td></tr>
+              <tr id="diff-tts-cache"><td class="py-4 pr-4 font-medium text-slate-900">TTS clip caching</td><td class="py-4 pr-4 text-slate-700">Yes</td><td class="py-4 pr-4 text-slate-700">No</td><td class="py-4 pr-4 text-slate-700">Web uses normal browser HTTP caching semantics.</td></tr>
+              <tr id="diff-text-utils"><td class="py-4 pr-4 font-medium text-slate-900">Text utilities</td><td class="py-4 pr-4 text-slate-700">src/text_utils.rs</td><td class="py-4 pr-4 text-slate-700">dictaite_core/services/text_utils.py</td><td class="py-4 pr-4 text-slate-700">Same whitespace normalization algorithm.</td></tr>
+              <tr id="diff-error-type"><td class="py-4 pr-4 font-medium text-slate-900">Error type</td><td class="py-4 pr-4 text-slate-700">AppError enum</td><td class="py-4 pr-4 text-slate-700">Exceptions and error strings</td><td class="py-4 pr-4 text-slate-700">Python passes errors through the event system as strings.</td></tr>
+              <tr id="diff-voice-casing"><td class="py-4 pr-4 font-medium text-slate-900">Voice casing</td><td class="py-4 pr-4 text-slate-700">Lowercase internally</td><td class="py-4 pr-4 text-slate-700">Lowercase after load</td><td class="py-4 pr-4 text-slate-700">Settings normalization keeps voice selection stable.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-6 grid gap-4 lg:grid-cols-2">
+          <article id="watchpoint-parity" data-component="watchpoint-card" data-editable="true" class="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+            <h3 class="text-lg font-semibold text-amber-950">Architectural watchpoint</h3>
+            <p class="mt-2 text-sm leading-6 text-amber-900">The user-visible behavior is aligned, but the implementations still differ in capture APIs, scheduling, and playback mechanisms. When editing one frontend, it is worth checking the corresponding shared module before assuming parity already exists.</p>
+          </article>
+          <article id="watchpoint-settings" data-component="watchpoint-card" data-editable="true" class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <h3 class="text-lg font-semibold text-slate-950">Operational implication</h3>
+            <p class="mt-2 text-sm leading-6 text-slate-700">Because the settings file and event vocabulary are shared, most cross-frontend changes should start in the shared core, then fan out to the UI shells only where they add rendering or input-specific behavior.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: remaining-differences:end -->
+
+    <!-- EDIT-REGION: appendix:start -->
+    <section id="section-appendix" data-section="appendix" data-title="Appendix" class="section-shell mt-10">
+      <div class="report-card rounded-3xl border border-slate-200 bg-white p-6 md:p-8">
+        <div class="max-w-3xl">
+          <div class="text-xs font-semibold uppercase tracking-[0.22em] text-blue-700">Appendix</div>
+          <h2 class="mt-2 text-2xl font-semibold text-slate-950">Source notes and scope</h2>
+          <p class="mt-4 text-base leading-7 text-slate-700">This HTML report is derived from the architecture guide markdown and preserves its core technical claims: the Rust implementation is the reference, the Python implementations mirror it closely, and all three frontends converge on the same realtime behavior and settings model.</p>
+        </div>
+      </div>
+    </section>
+    <!-- EDIT-REGION: appendix:end -->
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-6 pb-10 text-sm text-slate-500">
+    <div class="border-t border-slate-200 pt-4">Generated HTML architecture report for dict-ai-te. Designed for browser viewing, print export, and future bounded edits.</div>
+  </footer>
+
+  <script type="application/json" id="report-manifest">
+  {
+    "schema": "html-report-generator/v1",
+    "title": "Architecture Guide",
+    "version": "0.1",
+    "language": "en",
+    "generatedAt": "2026-05-16",
+    "designSystem": {
+      "css": "tailwind-cdn",
+      "dependencies": ["tailwind"],
+      "optionalDependencies": []
+    },
+    "sections": [
+      {"id": "section-cover", "key": "cover", "title": "Cover", "editable": true, "components": ["metric-reference-implementation", "metric-implementations", "metric-session-modes", "metric-shared-settings", "hero-architecture-diagram"]},
+      {"id": "section-executive-summary", "key": "executive-summary", "title": "Executive Summary", "editable": true, "components": ["summary-card-single-source", "summary-card-shared-format", "summary-card-audio-standardization", "summary-card-main-delta"]},
+      {"id": "section-system-overview", "key": "system-overview", "title": "System Overview", "editable": true, "components": ["system-overview-text", "diagram-system-overview"]},
+      {"id": "section-repository-layout", "key": "repository-layout", "title": "Repository Layout", "editable": true, "components": ["repository-layout-summary", "tree-repository-layout"]},
+      {"id": "section-three-implementations", "key": "three-implementations", "title": "The Three Implementations at a Glance", "editable": true, "components": ["table-implementation-comparison"]},
+      {"id": "section-audio-pipeline", "key": "audio-pipeline", "title": "Audio Pipeline", "editable": true, "components": ["audio-pipeline-rust", "audio-pipeline-gtk", "audio-pipeline-web", "diagram-audio-pipeline"]},
+      {"id": "section-realtime-sessions", "key": "realtime-sessions", "title": "OpenAI Realtime Sessions", "editable": true, "components": ["session-transcription", "session-translation", "diagram-session-lifecycle"]},
+      {"id": "section-event-parsing", "key": "event-parsing", "title": "Event Parsing and Normalization", "editable": true, "components": ["event-enum-card", "table-event-mapping"]},
+      {"id": "section-transcript-assembly", "key": "transcript-assembly", "title": "Transcript Assembly", "editable": true, "components": ["transcript-assembler-rust", "transcript-assembler-python", "diagram-transcript-assembly"]},
+      {"id": "section-tts-playback", "key": "tts-playback", "title": "Text-to-Speech and Playback", "editable": true, "components": ["diagram-tts-flow", "tts-rust-details", "tts-python-details"]},
+      {"id": "section-settings-configuration", "key": "settings-configuration", "title": "Settings and Configuration", "editable": true, "components": ["settings-json-example", "settings-rust", "settings-python", "settings-legacy-migration", "settings-env-override"]},
+      {"id": "section-ui-layers", "key": "ui-layers", "title": "UI Layers", "editable": true, "components": ["ui-rust-egui", "ui-python-gtk", "ui-python-web", "table-ui-differences"]},
+      {"id": "section-end-to-end-flow", "key": "end-to-end-flow", "title": "End-to-End Data Flow", "editable": true, "components": ["diagram-end-to-end-flow", "transcription-flow-summary", "translation-flow-summary"]},
+      {"id": "section-remaining-differences", "key": "remaining-differences", "title": "Python vs Rust - Remaining Differences", "editable": true, "components": ["table-remaining-differences", "watchpoint-parity", "watchpoint-settings"]},
+      {"id": "section-appendix", "key": "appendix", "title": "Appendix", "editable": true, "components": []}
+    ],
+    "components": [
+      {"id": "metric-reference-implementation", "type": "metric-card", "section": "section-cover", "editable": true},
+      {"id": "metric-implementations", "type": "metric-card", "section": "section-cover", "editable": true},
+      {"id": "metric-session-modes", "type": "metric-card", "section": "section-cover", "editable": true},
+      {"id": "metric-shared-settings", "type": "metric-card", "section": "section-cover", "editable": true},
+      {"id": "hero-architecture-diagram", "type": "inline-svg-diagram", "section": "section-cover", "editable": true},
+      {"id": "summary-card-single-source", "type": "summary-card", "section": "section-executive-summary", "editable": true},
+      {"id": "summary-card-shared-format", "type": "summary-card", "section": "section-executive-summary", "editable": true},
+      {"id": "summary-card-audio-standardization", "type": "summary-card", "section": "section-executive-summary", "editable": true},
+      {"id": "summary-card-main-delta", "type": "summary-card", "section": "section-executive-summary", "editable": true},
+      {"id": "system-overview-text", "type": "context-panel", "section": "section-system-overview", "editable": true},
+      {"id": "diagram-system-overview", "type": "inline-svg-diagram", "section": "section-system-overview", "editable": true},
+      {"id": "repository-layout-summary", "type": "repository-layout-panel", "section": "section-repository-layout", "editable": true},
+      {"id": "tree-repository-layout", "type": "tree-diagram", "section": "section-repository-layout", "editable": true},
+      {"id": "table-implementation-comparison", "type": "comparison-table", "section": "section-three-implementations", "editable": true},
+      {"id": "audio-pipeline-rust", "type": "pipeline-card", "section": "section-audio-pipeline", "editable": true},
+      {"id": "audio-pipeline-gtk", "type": "pipeline-card", "section": "section-audio-pipeline", "editable": true},
+      {"id": "audio-pipeline-web", "type": "pipeline-card", "section": "section-audio-pipeline", "editable": true},
+      {"id": "diagram-audio-pipeline", "type": "inline-svg-diagram", "section": "section-audio-pipeline", "editable": true},
+      {"id": "session-transcription", "type": "session-card", "section": "section-realtime-sessions", "editable": true},
+      {"id": "session-translation", "type": "session-card", "section": "section-realtime-sessions", "editable": true},
+      {"id": "diagram-session-lifecycle", "type": "inline-svg-diagram", "section": "section-realtime-sessions", "editable": true},
+      {"id": "event-enum-card", "type": "event-enum", "section": "section-event-parsing", "editable": true},
+      {"id": "table-event-mapping", "type": "event-mapping-table", "section": "section-event-parsing", "editable": true},
+      {"id": "transcript-assembler-rust", "type": "transcript-assembler-card", "section": "section-transcript-assembly", "editable": true},
+      {"id": "transcript-assembler-python", "type": "transcript-assembler-card", "section": "section-transcript-assembly", "editable": true},
+      {"id": "diagram-transcript-assembly", "type": "inline-svg-diagram", "section": "section-transcript-assembly", "editable": true},
+      {"id": "diagram-tts-flow", "type": "inline-svg-diagram", "section": "section-tts-playback", "editable": true},
+      {"id": "tts-rust-details", "type": "tts-details", "section": "section-tts-playback", "editable": true},
+      {"id": "tts-python-details", "type": "tts-details", "section": "section-tts-playback", "editable": true},
+      {"id": "settings-json-example", "type": "config-example", "section": "section-settings-configuration", "editable": true},
+      {"id": "settings-rust", "type": "settings-card", "section": "section-settings-configuration", "editable": true},
+      {"id": "settings-python", "type": "settings-card", "section": "section-settings-configuration", "editable": true},
+      {"id": "settings-legacy-migration", "type": "settings-card", "section": "section-settings-configuration", "editable": true},
+      {"id": "settings-env-override", "type": "settings-card", "section": "section-settings-configuration", "editable": true},
+      {"id": "ui-rust-egui", "type": "ui-card", "section": "section-ui-layers", "editable": true},
+      {"id": "ui-python-gtk", "type": "ui-card", "section": "section-ui-layers", "editable": true},
+      {"id": "ui-python-web", "type": "ui-card", "section": "section-ui-layers", "editable": true},
+      {"id": "table-ui-differences", "type": "ui-differences-table", "section": "section-ui-layers", "editable": true},
+      {"id": "diagram-end-to-end-flow", "type": "inline-svg-diagram", "section": "section-end-to-end-flow", "editable": true},
+      {"id": "transcription-flow-summary", "type": "flow-summary", "section": "section-end-to-end-flow", "editable": true},
+      {"id": "translation-flow-summary", "type": "flow-summary", "section": "section-end-to-end-flow", "editable": true},
+      {"id": "table-remaining-differences", "type": "differences-table", "section": "section-remaining-differences", "editable": true},
+      {"id": "watchpoint-parity", "type": "watchpoint-card", "section": "section-remaining-differences", "editable": true},
+      {"id": "watchpoint-settings", "type": "watchpoint-card", "section": "section-remaining-differences", "editable": true}
+    ]
+  }
+  </script>
+
+  <script>
+    const tocLinks = Array.from(document.querySelectorAll('.toc-link'));
+    const sectionIds = tocLinks.map(link => link.getAttribute('href')?.slice(1)).filter(Boolean);
+    const sections = sectionIds.map(id => document.getElementById(id)).filter(Boolean);
+
+    if ('IntersectionObserver' in window && sections.length) {
+      const observer = new IntersectionObserver((entries) => {
+        const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const activeId = visible.target.id;
+        tocLinks.forEach(link => {
+          const isActive = link.getAttribute('href') === `#${activeId}`;
+          link.classList.toggle('is-active', isActive);
+        });
+      }, { rootMargin: '-20% 0px -65% 0px', threshold: [0.08, 0.18, 0.35] });
+
+      sections.forEach(section => observer.observe(section));
+    }
+  </script>
+</body>
+</html>

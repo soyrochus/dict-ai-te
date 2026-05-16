@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Delivery Transformation Report</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      body { background: white !important; }
+      .no-print { display: none !important; }
+      .print-break { page-break-before: always; }
+      section, .report-card { break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <main id="report-root" data-report-schema="html-report-generator/v1" class="mx-auto max-w-7xl px-6 py-8">
+
+    <!-- EDIT-REGION: cover:start -->
+    <section id="section-cover" data-section="cover" data-title="Cover" class="mb-10">
+      <header class="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div class="absolute right-0 top-0 h-40 w-40 rounded-full bg-blue-100 blur-3xl"></div>
+        <div class="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Transformation Report</p>
+            <h1 id="report-title" class="mt-3 text-4xl font-semibold tracking-tight text-slate-950">AI Delivery Transformation</h1>
+            <p id="report-subtitle" class="mt-4 max-w-3xl text-lg text-slate-600">Structured view of how AI changes software delivery from task execution toward specification, validation, and controlled iteration.</p>
+          </div>
+          <button onclick="window.print()" class="no-print rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">Print / Save as PDF</button>
+        </div>
+      </header>
+    </section>
+    <!-- EDIT-REGION: cover:end -->
+
+    <!-- EDIT-REGION: executive-summary:start -->
+    <section id="section-executive-summary" data-section="executive-summary" data-title="Executive Summary" class="mt-10">
+      <div class="mb-5">
+        <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Executive Summary</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-950">Main conclusions</h2>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-3">
+        <!-- COMPONENT: summary-card:delivery-impact:start -->
+        <article id="summary-card-delivery-impact" data-component="summary-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Impact</p>
+          <h3 class="mt-2 text-lg font-semibold text-slate-950">Improved delivery leverage</h3>
+          <p class="mt-3 text-sm leading-6 text-slate-600">The model increases leverage by shifting teams from manual task execution toward explicit specifications, AI-assisted production, and structured verification.</p>
+        </article>
+        <!-- COMPONENT: summary-card:delivery-impact:end -->
+
+        <!-- COMPONENT: summary-card:adoption-risk:start -->
+        <article id="summary-card-adoption-risk" data-component="summary-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Risk</p>
+          <h3 class="mt-2 text-lg font-semibold text-slate-950">Adoption is the bottleneck</h3>
+          <p class="mt-3 text-sm leading-6 text-slate-600">The main constraint is not tool availability. The constraint is whether teams change how they describe, review, validate, and reuse work.</p>
+        </article>
+        <!-- COMPONENT: summary-card:adoption-risk:end -->
+
+        <!-- COMPONENT: summary-card:pilot-recommendation:start -->
+        <article id="summary-card-pilot-recommendation" data-component="summary-card" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Recommendation</p>
+          <h3 class="mt-2 text-lg font-semibold text-slate-950">Start with bounded pilots</h3>
+          <p class="mt-3 text-sm leading-6 text-slate-600">Begin with coherent teams or clusters, measure concrete delivery improvements, and convert the strongest practices into reusable assets.</p>
+        </article>
+        <!-- COMPONENT: summary-card:pilot-recommendation:end -->
+      </div>
+    </section>
+    <!-- EDIT-REGION: executive-summary:end -->
+
+    <!-- EDIT-REGION: operating-model:start -->
+    <section id="section-operating-model" data-section="operating-model" data-title="Operating Model" class="mt-10">
+      <div class="mb-5">
+        <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Operating Model</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-950">From manual delivery to AI-assisted iteration</h2>
+      </div>
+
+      <!-- COMPONENT: inline-svg-diagram:delivery-loop:start -->
+      <figure id="diagram-delivery-loop" data-component="inline-svg-diagram" data-editable="true" class="report-card rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <figcaption class="mb-4">
+          <h3 class="text-lg font-semibold text-slate-950">Delivery loop</h3>
+          <p class="mt-1 text-sm text-slate-600">A simplified model showing how the team moves from intent to verified output.</p>
+        </figcaption>
+        <svg viewBox="0 0 960 360" class="h-auto w-full" role="img" aria-labelledby="diagram-delivery-loop-title">
+          <title id="diagram-delivery-loop-title">AI-assisted delivery loop</title>
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+            </marker>
+          </defs>
+          <g id="node-specification" data-node="delivery-step">
+            <rect x="40" y="80" width="190" height="100" rx="18" fill="#eff6ff" stroke="#bfdbfe"/>
+            <text x="135" y="122" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Specification</text>
+            <text x="135" y="150" text-anchor="middle" font-size="13" fill="#475569">Intent, constraints, examples</text>
+          </g>
+          <g id="node-generation" data-node="delivery-step">
+            <rect x="285" y="80" width="190" height="100" rx="18" fill="#f8fafc" stroke="#cbd5e1"/>
+            <text x="380" y="122" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Generation</text>
+            <text x="380" y="150" text-anchor="middle" font-size="13" fill="#475569">AI-assisted production</text>
+          </g>
+          <g id="node-verification" data-node="delivery-step">
+            <rect x="530" y="80" width="190" height="100" rx="18" fill="#ecfdf5" stroke="#bbf7d0"/>
+            <text x="625" y="122" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Verification</text>
+            <text x="625" y="150" text-anchor="middle" font-size="13" fill="#475569">Tests, review, evidence</text>
+          </g>
+          <g id="node-reuse" data-node="delivery-step">
+            <rect x="775" y="80" width="145" height="100" rx="18" fill="#fff7ed" stroke="#fed7aa"/>
+            <text x="847" y="122" text-anchor="middle" font-size="18" font-weight="700" fill="#0f172a">Reuse</text>
+            <text x="847" y="150" text-anchor="middle" font-size="13" fill="#475569">Context assets</text>
+          </g>
+          <path d="M230 130 H285" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+          <path d="M475 130 H530" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+          <path d="M720 130 H775" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+          <path d="M847 180 C847 260 135 260 135 180" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrow)"/>
+        </svg>
+      </figure>
+      <!-- COMPONENT: inline-svg-diagram:delivery-loop:end -->
+    </section>
+    <!-- EDIT-REGION: operating-model:end -->
+
+    <!-- EDIT-REGION: risks:start -->
+    <section id="section-risks" data-section="risks" data-title="Risks and Mitigations" class="mt-10">
+      <div class="mb-5">
+        <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Risks</p>
+        <h2 class="mt-2 text-2xl font-semibold text-slate-950">Risks and mitigations</h2>
+      </div>
+
+      <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <table id="table-risk-matrix" data-component="risk-table" data-editable="true" class="min-w-full divide-y divide-slate-200 text-sm">
+          <thead class="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+            <tr>
+              <th class="px-4 py-3">Risk</th>
+              <th class="px-4 py-3">Impact</th>
+              <th class="px-4 py-3">Likelihood</th>
+              <th class="px-4 py-3">Mitigation</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200">
+            <tr id="risk-unclear-ownership" data-row="risk">
+              <td class="px-4 py-4 font-medium text-slate-900">Unclear ownership</td>
+              <td class="px-4 py-4 text-slate-600">High</td>
+              <td class="px-4 py-4 text-slate-600">Medium</td>
+              <td class="px-4 py-4 text-slate-600">Assign named owners for process, tooling, adoption, and measurement before execution starts.</td>
+            </tr>
+            <tr id="risk-fragmented-context" data-row="risk">
+              <td class="px-4 py-4 font-medium text-slate-900">Fragmented context</td>
+              <td class="px-4 py-4 text-slate-600">High</td>
+              <td class="px-4 py-4 text-slate-600">High</td>
+              <td class="px-4 py-4 text-slate-600">Create shared context packs, reusable prompts, and explicit source-of-truth documents.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <!-- EDIT-REGION: risks:end -->
+  </main>
+
+  <script type="application/json" id="report-manifest">
+  {
+    "schema": "html-report-generator/v1",
+    "title": "AI Delivery Transformation",
+    "version": "0.1",
+    "language": "en",
+    "designSystem": {
+      "css": "tailwind-cdn",
+      "dependencies": ["tailwind"],
+      "optionalDependencies": []
+    },
+    "sections": [
+      {
+        "id": "section-cover",
+        "key": "cover",
+        "title": "Cover",
+        "editable": true,
+        "components": ["report-title", "report-subtitle"]
+      },
+      {
+        "id": "section-executive-summary",
+        "key": "executive-summary",
+        "title": "Executive Summary",
+        "editable": true,
+        "components": ["summary-card-delivery-impact", "summary-card-adoption-risk", "summary-card-pilot-recommendation"]
+      },
+      {
+        "id": "section-operating-model",
+        "key": "operating-model",
+        "title": "Operating Model",
+        "editable": true,
+        "components": ["diagram-delivery-loop"]
+      },
+      {
+        "id": "section-risks",
+        "key": "risks",
+        "title": "Risks and Mitigations",
+        "editable": true,
+        "components": ["table-risk-matrix"]
+      }
+    ],
+    "components": [
+      { "id": "summary-card-delivery-impact", "type": "summary-card", "section": "section-executive-summary", "editable": true },
+      { "id": "summary-card-adoption-risk", "type": "summary-card", "section": "section-executive-summary", "editable": true },
+      { "id": "summary-card-pilot-recommendation", "type": "summary-card", "section": "section-executive-summary", "editable": true },
+      { "id": "diagram-delivery-loop", "type": "inline-svg-diagram", "section": "section-operating-model", "editable": true },
+      { "id": "table-risk-matrix", "type": "risk-table", "section": "section-risks", "editable": true }
+    ]
+  }
+  </script>
+</body>
+</html>

@@ -218,7 +218,7 @@ The only required configuration is the OpenAI API key, which can be set via:
 
 ## Architecture
 
-See the **[Architecture Guide](architecture-guide.md)** for a detailed technical walk-through covering:
+See the **[Architecture Guide (markdown)](architecture-guide.md)** or **[Architecture Guide (HTML)](architecture-guide.html)** for a detailed technical walk-through covering:
 
 - How the three implementations relate to each other
 - The audio capture pipeline (cpal / sounddevice / browser MediaRecorder)
