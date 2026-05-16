@@ -4,14 +4,15 @@
 [![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?logo=github)](https://github.com/soyrochus/dict-ai-te)
 [![FOSS Pluralism Manifesto](./badges/foss-pluralism-shield.svg)](./FOSS_PLURALISM_MANIFESTO.md)
 
-**dict-ai-te** is a live dictation and live translation app. Start listening, speak into your microphone, and see source text or translated text appear while the session is still running. Use it in three ways:
+**dict-ai-te** is a live dictation and live speech-translation application. Start listening, speak into your microphone, and see source text or translated text appear while the session is still running. It is available in three forms:
 
-- A native desktop app with GTK 4 (Linux/macOS)
-- A browser-based Web UI powered by Flask
-- A Rust version (can run natively on Linux, MacOS and Windows and on Web with Wasm/WebGL)
+- A **native Rust desktop app** using egui/eframe — the reference implementation
+- A **Python GTK 4 desktop app** (Linux / macOS)
+- A **Python Flask web app** — same features, accessible from any browser
 
-Both experiences share the same engine and settings.
+All three share the same settings file (`~/.dictaite/settings.json`) and connect to the same OpenAI Realtime API backend. The Python implementations are a feature-exact clone of the Rust app.
 
+For a deep technical dive into how everything fits together, see the **[Architecture Guide](architecture-guide.md)**.
 
 | Python GTK (Ubuntu) | Python GTK (macOS) |
 | :----: | :---: |
@@ -23,244 +24,225 @@ Both experiences share the same engine and settings.
 
 ## Features
 
-- Stream microphone audio directly from desktop and web interfaces.
-- See connection state, elapsed listening time, and live audio level feedback.
-- Live transcription using OpenAI Realtime with `gpt-realtime-whisper`.
-- Optional live speech translation using `gpt-realtime-translate`.
-- Edit or correct accumulated source and translated text in the main window.
-- Save transcripts as plain text files.
-- Copy transcripts to your clipboard with a single click.
-- Simple configuration using `.env` or environment variables for the OpenAI API key.
-- Consistent settings across the GTK app and Web UI.
+- **Live transcription** — audio streams directly to OpenAI Realtime (`gpt-4o-transcribe`) and transcribed words appear as you speak.
+- **Live translation** — optionally route the session through the `gpt-realtime` translation endpoint; source and translated transcripts accumulate simultaneously.
+- **TTS playback** — read back the transcript in a chosen voice via the OpenAI TTS API (`tts-1`).
+- **Audio level meter** — visual level bar during both recording and playback.
+- **Elapsed-time timer** — shows how long the current session has been running.
+- **Origin and target language selection** — choose from 20+ languages; auto-detect is the default.
+- **Save, copy, edit** — save the transcript as a `.txt` file, copy it to the clipboard, or edit it directly in the text area.
+- **Shared settings** — default language, voice preferences, and translate-by-default are stored in `~/.dictaite/settings.json` and shared across all app variants.
+- **Zero local models** — all speech recognition and translation run on OpenAI's infrastructure; only an API key is required.
 
-## Installation
+## Quick Start
 
-**Prerequisites:**
+### Prerequisites
 
-- Python 3.8 or higher (Python 3.12+ recommended)
-- Linux, macOS, or Windows
-- [uv](https://github.com/astral-sh/uv) for fast dependency management
+- An OpenAI API key with access to the Realtime API.
+- Python 3.12+ **or** Rust toolchain (for the respective app variant).
+- Linux or macOS (Windows supported for the Rust app).
 
-### 1. Clone the Repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/soyrochus/dict-ai-te.git
 cd dict-ai-te
 ```
 
-### 2. Create and Activate a Virtual Environment
+### 2. Set your API key
 
 ```bash
-uv venv .venv
-source .venv/bin/activate
+export OPENAI_API_KEY=your_key_here
+# or create a .env file:
+echo "OPENAI_API_KEY=your_key_here" > .env
 ```
 
-### 3. Install Dependencies
+### 3. Run
 
-Make sure you have a `pyproject.toml` file in the project root (define dependencies as needed).
-
-```bash
-uv sync
-```
-
-> **Note:**
-On Linux, the GTK4 library which the application uses, requires installation of various packages:
-
-```sh
-sudo apt update
-sudo apt install -y \
-  libgtk-4-dev \
-  libgirepository-2.0-dev \
-  libcairo2-dev \
-  pkg-config \
-  python3-dev \
-  python3-gi \
-  python3-gi-cairo \
-  gir1.2-gtk-4.0 \
-  libportaudio2
- ```
-
-On macOS, you need to install the dependencies using [Homebrew](https://brew.sh/):
-
-```sh
-    brew install gtk4 pygobject3 portaudio
-```
-
-### 4. Run the Application
-
-```bash
-python -m dictaite
-```
-
-or use the script in the bin directory
-
-```bash
-<source dir>>bin/dictaite
-```
-
-Note that the script needs to have the executable permission set.
-
-You can also run the Web UI in your browser (see the next section for first-time setup):
-
-```bash
-bin/dictaite-web
-```
-
-### 5. Launch the Web UI
-
-```bash
-uv sync --extra ui-web
-bin/dictaite-web
-```
-
-Visit `http://localhost:5000` to use the browser interface.
-
-Quick reference:
-
-- GTK desktop app: `bin/dictaite`
-- Web UI (Flask): `bin/dictaite-web`
-
-## Rust desktop app (egui/eframe)
-
-There’s also a native Rust version of dict-ai-te. It lives in the Rust crate at the project root (see `Cargo.toml`) with sources under `src/`. It’s built with `eframe`/`egui` (rendered via `wgpu`) and uses:
-
-- `cpal`/`rodio` for audio input/output
-- `rfd` for native file dialogs
-- `arboard` for clipboard
-- `reqwest` for OpenAI HTTP calls (API key from environment or `.env`)
-
-You can run it on Linux, macOS, and Windows. On launch it reads `OPENAI_API_KEY` from your environment or a local `.env` file.
-
-### System Dependencies (Ubuntu 24.04 and newer)
-
-Before building, install the development libraries this project depends on:
-
-```bash
-sudo apt update
-sudo apt install -y \
-   build-essential pkg-config \
-   libssl-dev \
-   libasound2-dev libjack-jackd2-dev \
-   libx11-dev libxi-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-   libxkbcommon-dev libwayland-dev libgl1-mesa-dev libudev-dev \
-   libvulkan1 vulkan-tools mesa-vulkan-drivers libvulkan-dev \
-   libgtk-3-dev \
-   xclip wl-clipboard
-```
-
-#### Why these are needed
-
-- build-essential, pkg-config — compilers, linker, and pkg-config metadata.
-- libssl-dev — required by `openssl-sys` (via `reqwest`).
-- libasound2-dev, libjack-jackd2-dev — required by `alsa-sys` and JACK backend in `cpal`/`rodio`.
-- X11/Wayland/GL stack (libx11-dev … libgl1-mesa-dev …) — required by `eframe`/`egui` with `wgpu`.
-- libudev-dev — device discovery for `wgpu`.
-- libvulkan1, mesa-vulkan-drivers, libvulkan-dev — Vulkan runtime and headers for `wgpu`.
-- libgtk-3-dev — needed by `rfd` for native file dialogs.
-- xclip, wl-clipboard — runtime helpers for `arboard` clipboard integration.
-
-### Build and run
-
-Make sure you have the Rust toolchain installed (via <https://rustup.rs/>). Then:
-
-```bash
-cargo build --release
-```
-
-Run it either via cargo:
+**Rust (recommended — the reference implementation):**
 
 ```bash
 cargo run --release
 ```
 
-…or by launching the built binary directly:
+**Python GTK desktop:**
 
 ```bash
+uv sync
+python -m dictaite          # or: bin/dictaite
+```
+
+**Python web UI:**
+
+```bash
+uv sync
+bin/dictaite-web            # then open http://localhost:8080
+```
+
+---
+
+## Installation — Python
+
+### System dependencies
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt update
+sudo apt install -y \
+  libgtk-4-dev libgirepository-2.0-dev libcairo2-dev pkg-config \
+  python3-dev python3-gi python3-gi-cairo gir1.2-gtk-4.0 \
+  libportaudio2
+```
+
+**macOS:**
+
+```bash
+brew install gtk4 pygobject3 portaudio
+```
+
+### Python dependencies
+
+```bash
+uv venv .venv
+source .venv/bin/activate
+uv sync
+```
+
+### Running
+
+```bash
+# GTK desktop app
+python -m dictaite
+# or
+bin/dictaite
+
+# Web UI
+bin/dictaite-web
+# or
+uv run -m dictaite.ui_web.app
+```
+
+Visit `http://localhost:8080` for the web UI.
+
+---
+
+## Installation — Rust
+
+### System dependencies (Ubuntu 24.04+)
+
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential pkg-config libssl-dev \
+  libasound2-dev libjack-jackd2-dev \
+  libx11-dev libxi-dev libxcb1-dev libxcb-render0-dev \
+  libxcb-shape0-dev libxcb-xfixes0-dev \
+  libxkbcommon-dev libwayland-dev libgl1-mesa-dev libudev-dev \
+  libvulkan1 vulkan-tools mesa-vulkan-drivers libvulkan-dev \
+  libgtk-3-dev \
+  xclip wl-clipboard
+```
+
+**Why each dependency is needed:**
+
+- `build-essential`, `pkg-config` — C compiler and metadata tooling
+- `libssl-dev` — TLS (used by `reqwest` for HTTPS)
+- `libasound2-dev`, `libjack-jackd2-dev` — audio I/O (`cpal` / `rodio`)
+- X11/Wayland/GL stack — rendering (`eframe` / `wgpu`)
+- `libudev-dev` — device enumeration (`wgpu`)
+- Vulkan stack — GPU rendering backend for `wgpu`
+- `libgtk-3-dev` — native file dialogs (`rfd`)
+- `xclip`, `wl-clipboard` — clipboard integration (`arboard`)
+
+### Build and run
+
+```bash
+cargo build --release
+cargo run --release
+# or
 ./target/release/dict_ai_te
 ```
 
-Environment setup (any of the app variants):
+---
 
-```bash
-export OPENAI_API_KEY=your_key_here
-# or create a .env file in the project root with OPENAI_API_KEY=...
-```
+## Web UI reference
 
-## Web UI
+The Flask interface mirrors the GTK and Rust layout using TailwindCSS and vanilla JavaScript. Audio is captured in the browser, converted to mono 24 kHz PCM16, base64-encoded, and sent to the server over a WebSocket. The server holds the API key and relays events back.
 
-The Flask interface mirrors the GTK layout using TailwindCSS and vanilla JavaScript. It streams microphone PCM chunks through a server-owned WebSocket bridge, keeping the OpenAI API key on the server while forwarding normalized realtime transcript events back to the browser.
+### WebSocket endpoints
 
-### Web UI prerequisites
+| Endpoint | Description |
+| --- | --- |
+| `GET /ws/live/transcribe` | Live transcription session |
+| `GET /ws/live/translate` | Live translation session |
 
-- Python 3.12+
-- A browser with microphone access and WebSocket support
-- OpenAI API key exported as `OPENAI_API_KEY` or placed in a `.env`
+**Session protocol:**
 
-All dependecies are installed with the desktop application.
+1. Connect to the endpoint.
+2. Send `{ "type": "start", "source_language": "<code>", "target_language": "<name>" }`.
+3. Send audio chunks: `{ "type": "audio", "audio": "<base64-pcm16>" }`.
+4. Receive events: `{ "type": "source_delta" | "translation_delta" | "session_state" | "error", "text": "...", "state": "...", "error": "..." }`.
+5. Send `{ "type": "stop" }` to end.
 
-### Running the Web server
+### REST endpoints
 
-Use the convenience script or run the module directly:
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/api/settings` | GET / POST | Read / write settings |
+| `/api/tts-test` | POST | Generate voice preview (`{ gender, text, voice? }` → `audio/wav`) |
+| `/api/health` | GET | Readiness probe |
 
-```bash
-bin/dictaite-web
-# or
-uv run -m dictaite.ui_web.app --host 0.0.0.0 --port 8080
-```
+### Browser shortcuts
 
-Navigate to `http://localhost:8080`. The browser will prompt for microphone permissions when you start listening. Audio is downmixed to mono 24 kHz PCM16 in the browser, chunked, base64 encoded, and sent to `/ws/live/transcribe` or `/ws/live/translate`.
+| Key | Action |
+| --- | --- |
+| `Space` | Start / stop recording (when textarea is not focused) |
+| `Ctrl/Cmd+C` | Copy transcript |
+| `Ctrl/Cmd+S` | Save transcript as `.txt` |
 
-### API overview
-
-- `GET /ws/live/transcribe` – WebSocket bridge for live source transcription.
-- `GET /ws/live/translate` – WebSocket bridge for live speech translation.
-- `POST /api/transcribe` – compatibility multipart upload endpoint retained for non-browser integrations.
-- `POST /api/tts-test` – JSON `{ gender, text, voice? }`, returns `audio/wav` preview bytes.
-- `POST /api/settings` – JSON payload to persist shared settings; `GET /api/settings` fetches current values.
-- `GET /api/health` – simple readiness probe.
-
-CORS is disabled by default. Enable it via `DICTAITE_ENABLE_CORS=true` and `DICTAITE_CORS_ORIGIN=...` in the Flask configuration
-if embedding in another domain. A placeholder hook (`DICTAITE_RATE_LIMITER`) is left in `app.py` to plug in your preferred rate
-limiter middleware.
-
-### Browser controls
-
-- `Space` – start/stop recording (ignored when the textarea is focused).
-- `Ctrl/Cmd+C` – copy transcript.
-- `Ctrl/Cmd+S` – download transcript as `.txt`.
-
-The Play button synthesizes audio for the current transcript via `/api/tts-test` using the chosen voice gender.
-
-### Settings synchronisation
-
-Settings are stored in `~/.dictaite/settings.json` and shared with the GTK application. The web form uses the same voices and
-language lists defined in `dictaite/ui_common.py`. Use the Play buttons to preview voice choices before saving.
+---
 
 ## Configuration
 
-1. Create a `.env` file in the project root containing your OpenAI API key:
+Settings are stored in `~/.dictaite/settings.json` and shared between all app variants. You can also override the config directory with the `DICTAITE_HOME` environment variable.
 
-   ```dotenv
-   OPENAI_API_KEY=your_key_here
-   ```
+Legacy TOML configs at `~/.config/dict-ai-te/dict-ai-te_config.toml` are migrated automatically on first launch.
 
-2. Alternatively, set the `OPENAI_API_KEY` environment variable:
+The only required configuration is the OpenAI API key, which can be set via:
 
-   ```bash
-   export OPENAI_API_KEY=your_key_here
-   ```
+- A `.env` file in the project root: `OPENAI_API_KEY=your_key_here`
+- The environment variable `OPENAI_API_KEY`
 
+---
+
+## Architecture
+
+See the **[Architecture Guide](architecture-guide.md)** for a detailed technical walk-through covering:
+
+- How the three implementations relate to each other
+- The audio capture pipeline (cpal / sounddevice / browser MediaRecorder)
+- The OpenAI Realtime session protocol (transcription and translation endpoints)
+- Event parsing and normalization
+- The transcript assembler
+- TTS and audio playback
+- Settings storage and migration
+- End-to-end data flow diagrams
+- Remaining implementation differences between Rust and Python
+
+---
 
 ## Principles of Participation
 
-Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation.  
-Participation is open to all, regardless of background or viewpoint.  
+Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation.
+Participation is open to all, regardless of background or viewpoint.
 
-This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md), which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.  
+This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md), which affirms respect for people, freedom to critique ideas, and space for diverse perspectives.
 
+---
 
 ## License and Copyright
 
-Copyright (c) 2025, Iwan van der Kleijn
+Copyright (c) 2025, 2026 Iwan van der Kleijn
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
