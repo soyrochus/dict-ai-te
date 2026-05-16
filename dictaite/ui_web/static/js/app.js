@@ -2,10 +2,12 @@
   const config = window.dictaiteConfig || {};
 
   const elements = {
-    modeSelect: document.getElementById('modeSelect'),
+    translateLive: document.getElementById('translateLive'),
     targetContainer: document.getElementById('targetContainer'),
+    translationPane: document.getElementById('translationPane'),
     targetSelect: document.getElementById('targetSelect'),
     transcript: document.getElementById('transcript'),
+    translatedTranscript: document.getElementById('translatedTranscript'),
     copyButton: document.getElementById('copyButton'),
     downloadButton: document.getElementById('downloadButton'),
     clearButton: document.getElementById('clearButton'),
@@ -16,7 +18,7 @@
   };
 
   function init() {
-    setupModeSelect();
+    setupTranslateToggle();
     elements.copyButton?.addEventListener('click', copyTranscript);
     elements.downloadButton?.addEventListener('click', downloadTranscript);
     elements.clearButton?.addEventListener('click', clearTranscript);
@@ -24,18 +26,18 @@
     window.addEventListener('keydown', handleShortcuts);
   }
 
-  function setupModeSelect() {
-    if (!elements.modeSelect) {
+  function setupTranslateToggle() {
+    if (!elements.translateLive) {
       return;
     }
     updateTargetVisibility(isTranslateSelected());
-    elements.modeSelect.addEventListener('change', () => {
+    elements.translateLive.addEventListener('change', () => {
       updateTargetVisibility(isTranslateSelected());
     });
   }
 
   function isTranslateSelected() {
-    return elements.modeSelect?.value === 'translate';
+    return Boolean(elements.translateLive?.checked);
   }
 
   function updateTargetVisibility(active) {
@@ -44,10 +46,11 @@
     }
     if (!elements.targetContainer) return;
     elements.targetContainer.toggleAttribute('hidden', !active);
+    elements.translationPane?.toggleAttribute('hidden', !active);
   }
 
   async function copyTranscript() {
-    const text = elements.transcript?.value || '';
+    const text = combinedTranscript();
     if (!text.trim()) {
       setStatus('Transcript area is empty.', true);
       return;
@@ -62,7 +65,7 @@
   }
 
   function downloadTranscript() {
-    const text = elements.transcript?.value || '';
+    const text = combinedTranscript();
     if (!text.trim()) {
       setStatus('Transcript area is empty.', true);
       return;
@@ -83,11 +86,14 @@
     if (elements.transcript) {
       elements.transcript.value = '';
     }
+    if (elements.translatedTranscript) {
+      elements.translatedTranscript.value = '';
+    }
     setStatus('Transcript cleared.');
   }
 
   async function playTranscript() {
-    const text = elements.transcript?.value?.trim() || '';
+    const text = (elements.translatedTranscript?.value || elements.transcript?.value || '').trim();
     if (!text) {
       setStatus('Transcript area is empty.', true);
       return;
@@ -149,6 +155,15 @@
     }
     elements.recordStatus.textContent = message;
     elements.recordStatus.classList.toggle('text-red-400', Boolean(isError));
+  }
+
+  function combinedTranscript() {
+    const source = elements.transcript?.value?.trim() || '';
+    const translated = elements.translatedTranscript?.value?.trim() || '';
+    if (source && translated) {
+      return `Source:\n${source}\n\nTranslation:\n${translated}`;
+    }
+    return translated || source;
   }
 
   init();

@@ -3,23 +3,15 @@ use std::io::Cursor;
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use reqwest::blocking::{
-    multipart::{Form, Part},
-    Client, Response,
-};
+use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use rodio::{Decoder as RodioDecoder, Source};
-use serde::Deserialize;
 use serde_json;
 use serde_json::Value;
 
 use crate::error::AppError;
-use crate::text_utils::format_structured_text;
 
 const BASE_URL: &str = "https://api.openai.com/v1";
-const TRANSCRIBE_MODEL: &str = "gpt-4o-transcribe";
-const TRANSCRIBE_PROMPT: &str = "Transcribe the audio and return well-structured paragraphs. Use blank lines to separate paragraphs and fix simple punctuation errors.";
-const TRANSLATE_MODEL: &str = "gpt-5-mini-2025-08-07";
 const TTS_MODEL: &str = "tts-1";
 const TTS_RESPONSE_FORMAT: &str = "mp3";
 
@@ -49,73 +41,8 @@ impl OpenAiClient {
         Ok(Self { http, api_key })
     }
 
-    pub fn transcribe(&self, wav_bytes: &[u8], language: Option<&str>) -> Result<String, AppError> {
-        let file_part = Part::bytes(wav_bytes.to_vec())
-            .file_name("audio.wav")
-            .mime_str("audio/wav")
-            .context("Failed constructing multipart payload")
-            .map_err(AppError::from)?;
-
-        let mut form = Form::new()
-            .text("model", TRANSCRIBE_MODEL.to_string())
-            .text("prompt", TRANSCRIBE_PROMPT.to_string())
-            .part("file", file_part);
-        if let Some(lang) = language {
-            if !lang.is_empty() {
-                form = form.text("language", lang.to_string());
-            }
-        }
-
-        let url = format!("{BASE_URL}/audio/transcriptions");
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .multipart(form)
-            .send()
-            .context("Failed sending transcription request")
-            .map_err(AppError::from)?;
-
-        let payload: TranscriptionResponse =
-            parse_response(response, |body| AppError::Transcription(body))?;
-        Ok(format_structured_text(&payload.text))
-    }
-
-    pub fn translate(&self, text: &str, target_language: &str) -> Result<String, AppError> {
-        if text.trim().is_empty() {
-            return Ok(String::new());
-        }
-
-        let request = ChatCompletionRequest {
-            model: TRANSLATE_MODEL.to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: format!(
-                    "Translate the following text to {target}. Format the translation into clear paragraphs separated by blank lines. Return only the translated text.\n\n{text}",
-                    target = target_language,
-                    text = text.trim()
-                ),
-            }],
-        };
-
-        let url = format!("{BASE_URL}/chat/completions");
-        let response = self
-            .http
-            .post(url)
-            .bearer_auth(&self.api_key)
-            .json(&request)
-            .send()
-            .context("Failed sending translation request")
-            .map_err(AppError::from)?;
-
-        let payload: ChatCompletionResponse =
-            parse_response(response, |body| AppError::Translation(body))?;
-        let translated = payload
-            .choices
-            .get(0)
-            .and_then(|choice| choice.message.content.as_deref())
-            .unwrap_or_default();
-        Ok(format_structured_text(translated))
+    pub fn api_key(&self) -> &str {
+        &self.api_key
     }
 
     pub fn text_to_speech(&self, text: &str, voice: &str) -> Result<Vec<u8>, AppError> {
@@ -182,38 +109,6 @@ impl OpenAiClient {
                 .map_err(AppError::from)
         }
     }
-}
-
-#[derive(Deserialize)]
-struct TranscriptionResponse {
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Deserialize)]
-struct ChatChoice {
-    message: ChatChoiceMessage,
-}
-
-#[derive(Deserialize)]
-struct ChatChoiceMessage {
-    content: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-}
-
-#[derive(serde::Serialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
 }
 
 #[derive(serde::Serialize)]
@@ -464,51 +359,4 @@ fn encode_pcm_to_wav(
             .map_err(AppError::from)?;
     }
     Ok(cursor.into_inner())
-}
-
-#[derive(Deserialize)]
-struct ErrorEnvelope {
-    error: ErrorBody,
-}
-
-#[derive(Deserialize)]
-struct ErrorBody {
-    message: Option<String>,
-    code: Option<String>,
-    #[serde(rename = "type")]
-    kind: Option<String>,
-}
-
-fn parse_response<T, F>(response: Response, map_err: F) -> Result<T, AppError>
-where
-    T: for<'de> Deserialize<'de>,
-    F: Fn(String) -> AppError,
-{
-    if response.status().is_success() {
-        response
-            .json::<T>()
-            .context("Failed decoding API response")
-            .map_err(AppError::from)
-    } else {
-        let status = response.status();
-        let body = response.text().unwrap_or_default();
-        let message = if let Ok(envelope) = serde_json::from_str::<ErrorEnvelope>(&body) {
-            let mut msg = envelope
-                .error
-                .message
-                .unwrap_or_else(|| "Unknown error".into());
-            if let Some(code) = envelope.error.code {
-                msg = format!("{msg} ({code})");
-            }
-            if let Some(kind) = envelope.error.kind {
-                msg = format!("{msg} [{kind}]");
-            }
-            msg
-        } else if body.trim().is_empty() {
-            format!("HTTP {status}")
-        } else {
-            format!("HTTP {status}: {body}")
-        };
-        Err(map_err(message))
-    }
 }

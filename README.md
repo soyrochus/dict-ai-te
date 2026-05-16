@@ -4,7 +4,7 @@
 [![Open Source](https://img.shields.io/badge/Open%20Source-%E2%9D%A4-red?logo=github)](https://github.com/soyrochus/dict-ai-te)
 [![FOSS Pluralism Manifesto](./badges/foss-pluralism-shield.svg)](./FOSS_PLURALISM_MANIFESTO.md)
 
-**dict-ai-te** lets you record voice notes, transcribe them (via the OpenAI API), and optionally translate to a target language. Use it in two ways:
+**dict-ai-te** is a live dictation and live translation app. Start listening, speak into your microphone, and see source text or translated text appear while the session is still running. Use it in three ways:
 
 - A native desktop app with GTK 4 (Linux/macOS)
 - A browser-based Web UI powered by Flask
@@ -23,12 +23,11 @@ Both experiences share the same engine and settings.
 
 ## Features
 
-- Record audio notes directly from your microphone (desktop and web).
-- See real-time status and elapsed recording time.
-- Real-time audio level bar during recording.
-- Automatic transcription using the OpenAI Whisper API.
-- Edit or correct transcribed text in the main window.
-- Optional translation to a selected language.
+- Stream microphone audio directly from desktop and web interfaces.
+- See connection state, elapsed listening time, and live audio level feedback.
+- Live transcription using OpenAI Realtime with `gpt-realtime-whisper`.
+- Optional live speech translation using `gpt-realtime-translate`.
+- Edit or correct accumulated source and translated text in the main window.
 - Save transcripts as plain text files.
 - Copy transcripts to your clipboard with a single click.
 - Simple configuration using `.env` or environment variables for the OpenAI API key.
@@ -189,13 +188,12 @@ export OPENAI_API_KEY=your_key_here
 
 ## Web UI
 
-The Flask interface mirrors the GTK layout using TailwindCSS and vanilla JavaScript. It supports recording, live level metering,
-Whisper transcription, optional translation, text-to-speech previews, download/copy helpers and keyboard shortcuts.
+The Flask interface mirrors the GTK layout using TailwindCSS and vanilla JavaScript. It streams microphone PCM chunks through a server-owned WebSocket bridge, keeping the OpenAI API key on the server while forwarding normalized realtime transcript events back to the browser.
 
 ### Web UI prerequisites
 
 - Python 3.12+
-- `ffmpeg` (required by `pydub` to transcode browser recordings to WAV)
+- A browser with microphone access and WebSocket support
 - OpenAI API key exported as `OPENAI_API_KEY` or placed in a `.env`
 
 All dependecies are installed with the desktop application.
@@ -210,13 +208,13 @@ bin/dictaite-web
 uv run -m dictaite.ui_web.app --host 0.0.0.0 --port 8080
 ```
 
-Navigate to `http://localhost:8080`. The browser will prompt for microphone permissions when you start recording. MediaRecorder
-produces `webm/ogg` blobs which are transcoded to 16 kHz WAV on the server before reaching Whisper.
+Navigate to `http://localhost:8080`. The browser will prompt for microphone permissions when you start listening. Audio is downmixed to mono 24 kHz PCM16 in the browser, chunked, base64 encoded, and sent to `/ws/live/transcribe` or `/ws/live/translate`.
 
 ### API overview
 
-- `POST /api/transcribe` – multipart upload with `audio`, optional `language`, `translate`, `target_lang`. Returns JSON with
-   `text`, `translatedText?`, `durationMs`.
+- `GET /ws/live/transcribe` – WebSocket bridge for live source transcription.
+- `GET /ws/live/translate` – WebSocket bridge for live speech translation.
+- `POST /api/transcribe` – compatibility multipart upload endpoint retained for non-browser integrations.
 - `POST /api/tts-test` – JSON `{ gender, text, voice? }`, returns `audio/wav` preview bytes.
 - `POST /api/settings` – JSON payload to persist shared settings; `GET /api/settings` fetches current values.
 - `GET /api/health` – simple readiness probe.

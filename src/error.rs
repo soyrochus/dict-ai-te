@@ -12,10 +12,6 @@ pub enum AppError {
     Io(#[from] io::Error),
     #[error("Audio error: {0}")]
     Audio(String),
-    #[error("Transcription error: {0}")]
-    Transcription(String),
-    #[error("Translation error: {0}")]
-    Translation(String),
     #[error("Text-to-speech error: {0}")]
     Tts(String),
     #[error("{0}")]

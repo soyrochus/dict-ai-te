@@ -53,14 +53,14 @@ class Settings:
 def load_settings(path: Path | None = None) -> Settings:
     """Load settings from disk, migrating legacy formats when needed."""
 
-    settings_path = path or SETTINGS_PATH
+    settings_path = path or _settings_path()
     try:
         raw = settings_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         LOGGER.debug("No settings.json found at %s; checking legacy config", settings_path)
         legacy = _load_legacy_settings()
         if legacy:
-            LOGGER.info("Migrated legacy configuration from %s", LEGACY_CONFIG_PATH)
+            LOGGER.info("Migrated legacy configuration from %s", _legacy_config_path())
             save_settings(legacy, settings_path)
             return legacy
         return Settings()
@@ -80,7 +80,7 @@ def load_settings(path: Path | None = None) -> Settings:
 def save_settings(settings: Settings, path: Path | None = None) -> None:
     """Persist settings to disk in JSON format."""
 
-    settings_path = path or SETTINGS_PATH
+    settings_path = path or _settings_path()
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(settings.to_mapping(), indent=2, sort_keys=True)
     settings_path.write_text(payload, encoding="utf-8")
@@ -88,19 +88,29 @@ def save_settings(settings: Settings, path: Path | None = None) -> None:
 
 
 def _load_legacy_settings() -> Settings | None:
-    if not LEGACY_CONFIG_PATH.exists():
+    legacy_path = _legacy_config_path()
+    if not legacy_path.exists():
         return None
     if tomllib is None:  # pragma: no cover - Python <3.11 fallback
         LOGGER.warning("tomllib not available; cannot parse legacy TOML config")
         return None
     try:
-        raw = LEGACY_CONFIG_PATH.read_text(encoding="utf-8")
+        raw = legacy_path.read_text(encoding="utf-8")
         payload = tomllib.loads(raw)
     except (OSError, tomllib.TOMLDecodeError) as exc:  # type: ignore[attr-defined]
         LOGGER.warning("Failed parsing legacy settings: %s", exc)
         return None
     settings = Settings.from_mapping(payload)
     return settings
+
+
+def _settings_path() -> Path:
+    return Path(os.environ.get("DICTAITE_HOME", CONFIG_DIR)) / "settings.json"
+
+
+def _legacy_config_path() -> Path:
+    legacy_dir = Path(os.environ.get("XDG_CONFIG_HOME", LEGACY_CONFIG_DIR.parent)) / "dict-ai-te"
+    return legacy_dir / "dict-ai-te_config.toml"
 
 
 def _coerce_optional_str(value: Any) -> str | None:

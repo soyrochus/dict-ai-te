@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import asyncio
+import json
 import logging
 import threading
 import time
@@ -21,8 +23,20 @@ from flask import (
     request,
     send_file,
 )
+try:
+    from flask_sock import Sock
+except ImportError:  # pragma: no cover - dependency guard for old environments
+    Sock = None  # type: ignore[assignment]
 
 from dictaite_core import Settings, load_settings, save_settings
+from dictaite_core.realtime import (
+    LiveMode,
+    OpenAIRealtimeClient,
+    RealtimeClientConfig,
+    RealtimeClientError,
+    RealtimeEventType,
+    bridge_websocket_messages,
+)
 from dictaite_core.services import (
     ALLOWED_MIME_TYPES,
     MAX_AUDIO_DURATION_SECONDS,
@@ -81,6 +95,10 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     app.register_blueprint(PAGES)
     app.register_blueprint(API)
+    if Sock is not None:
+        _register_live_websockets(app)
+    else:
+        LOGGER.warning("flask-sock is not installed; live WebSocket routes are unavailable")
 
     @app.before_request
     def apply_rate_limit() -> None:  # pragma: no cover - placeholder hook
@@ -101,6 +119,65 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
         LOGGER.info("Loaded settings for web UI")
 
     return app
+
+
+def _register_live_websockets(app: Flask) -> None:
+    sock = Sock(app)
+
+    @sock.route("/ws/live/transcribe")
+    def live_transcribe(ws) -> None:
+        _run_live_socket(ws, LiveMode.TRANSCRIBE)
+
+    @sock.route("/ws/live/translate")
+    def live_translate(ws) -> None:
+        _run_live_socket(ws, LiveMode.TRANSLATE)
+
+
+def _run_live_socket(ws: Any, mode: LiveMode) -> None:
+    target_language = None
+    source_language = None
+
+    first_message = ws.receive()
+    if first_message:
+        try:
+            payload = json.loads(first_message)
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("type") == "start":
+            target_language = _normalize_language(payload.get("target_language"))
+            source_language = _normalize_language(payload.get("source_language"))
+        else:
+            ws.send(json.dumps({"type": "error", "error": "Expected start message"}))
+            return
+
+    async def incoming():
+        while True:
+            message = ws.receive()
+            if message is None:
+                break
+            try:
+                payload = json.loads(message)
+            except json.JSONDecodeError:
+                continue
+            yield payload
+
+    async def send_event(payload: dict[str, Any]) -> None:
+        ws.send(json.dumps(payload))
+
+    client = OpenAIRealtimeClient(
+        RealtimeClientConfig(
+            mode=mode,
+            target_language=target_language,
+            source_language=source_language,
+        )
+    )
+    try:
+        asyncio.run(bridge_websocket_messages(incoming(), send_event, client))
+    except RealtimeClientError as exc:
+        ws.send(json.dumps({"type": RealtimeEventType.ERROR.value, "error": str(exc)}))
+    except Exception as exc:  # pragma: no cover - network/session runtime path
+        LOGGER.exception("Live WebSocket session failed")
+        ws.send(json.dumps({"type": RealtimeEventType.ERROR.value, "error": str(exc)}))
 
 
 @PAGES.get("/")

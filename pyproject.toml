@@ -11,6 +11,8 @@ dependencies = [
     "openai>=1",
     "python-dotenv",
     "flask",
+    "flask-sock",
+    "websockets",
     "pydub",
     "pytest",
     "PyGObject"

@@ -17,9 +17,11 @@ import sounddevice as sd
 import soundfile as sf
 
 from dictaite_core import Settings, load_settings, save_settings
+from dictaite_core.realtime import LiveMode, NormalizedEvent, RealtimeEventType, TranscriptAssembler
 from dictaite_core.services import TranscriptionError, synthesize_speech, transcribe, translate
 
 from ..ui_common import FEMALE_VOICES, LANGUAGES, LANGUAGE_NAME, MALE_VOICES, VOICE_SAMPLE_TEXT
+from .live import GtkLiveSession
 
 import gi
 
@@ -51,6 +53,8 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.timer_thread: threading.Thread | None = None
         self.stream: sd.InputStream | None = None
         self.audio_frames: list[np.ndarray] = []
+        self.live_session: GtkLiveSession | None = None
+        self.source_assembler = TranscriptAssembler()
 
         self.mic_icon_path = os.path.join(str(IMGDIR), "microphone.png")
         self.stop_icon_path = os.path.join(str(IMGDIR), "stop.png")
@@ -91,7 +95,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         self.record_btn.connect("clicked", self.toggle_recording)
         box.append(self.record_btn)
 
-        self.status_label = Gtk.Label(label="Press to start recording")
+        self.status_label = Gtk.Label(label="Press to start listening")
         box.append(self.status_label)
 
         self.timer_label = Gtk.Label(label="00:00:00")
@@ -134,11 +138,25 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 
         box.append(controls_box)
 
+        source_label = Gtk.Label(label="Source transcript")
+        source_label.set_halign(Gtk.Align.START)
+        box.append(source_label)
+
         self.text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_child(self.text_view)
         scrolled.set_vexpand(True)
         box.append(scrolled)
+
+        translated_label = Gtk.Label(label="Translated transcript")
+        translated_label.set_halign(Gtk.Align.START)
+        box.append(translated_label)
+
+        self.translated_text_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
+        self.translated_scrolled = Gtk.ScrolledWindow()
+        self.translated_scrolled.set_child(self.translated_text_view)
+        self.translated_scrolled.set_vexpand(True)
+        box.append(self.translated_scrolled)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
@@ -237,16 +255,24 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     def start_recording(self) -> None:
         self.is_recording = True
         self.start_time = time.time()
-        self.status_label.set_text("Recording... Press to stop.")
+        self.status_label.set_text("Listening...")
 
         self.icon_image.set_from_file(self.stop_icon_path)
         self.audio_frames.clear()
         try:
-            self.stream = sd.InputStream(samplerate=16000, channels=1, callback=self.audio_callback)
-            self.stream.start()
+            mode = LiveMode.TRANSLATE if self.translate_switch.get_active() else LiveMode.TRANSCRIBE
+            self.source_assembler = TranscriptAssembler()
+            self.live_session = GtkLiveSession(
+                mode,
+                self.language_combo.get_active_id(),
+                self.target_combo.get_active_id() if mode == LiveMode.TRANSLATE else None,
+                self.on_live_event,
+                self.on_live_error,
+            )
+            self.live_session.start()
         except Exception as exc:  # pragma: no cover - runtime error path
-            LOGGER.exception("Failed to start recording")
-            self.show_error("Recording error", str(exc))
+            LOGGER.exception("Failed to start live session")
+            self.show_error("Live session error", str(exc))
             self.is_recording = False
             return
         self.timer_thread = threading.Thread(target=self.update_timer, daemon=True)
@@ -260,11 +286,15 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
                 self.stream.stop()
                 self.stream.close()
             except Exception as exc:  # pragma: no cover - runtime error path
-                LOGGER.exception("Failed to stop recording")
-                self.show_error("Recording error", str(exc))
+                LOGGER.exception("Failed to stop listening")
+                self.show_error("Listening error", str(exc))
         self.stream = None
-        self.status_label.set_text("Transcribing...")
-        threading.Thread(target=self.transcribe_audio, daemon=True).start()
+        if self.live_session:
+            self.live_session.stop()
+            self.live_session = None
+        self.status_label.set_text("Press to start listening")
+        self.level.set_value(0.0)
+        self.timer_label.set_text("00:00:00")
 
     def update_timer(self) -> None:
         while self.is_recording:
@@ -281,6 +311,26 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
 
     def on_translate_switch(self, switch: Gtk.Switch, _param: object) -> None:
         self.target_combo.set_sensitive(switch.get_active())
+        self.translated_scrolled.set_visible(switch.get_active())
+
+    def on_live_event(self, event: NormalizedEvent) -> bool:
+        if event.type in {RealtimeEventType.SOURCE_DELTA, RealtimeEventType.SOURCE_COMPLETED}:
+            self.display_transcript(self.source_assembler.apply(event))
+            self.status_label.set_text("Transcribing live")
+        elif event.type == RealtimeEventType.TRANSLATION_DELTA:
+            buffer = self.translated_text_view.get_buffer()
+            start, end = buffer.get_bounds()
+            current = buffer.get_text(start, end, True)
+            buffer.set_text(current + event.text)
+            self.status_label.set_text("Translating live")
+        elif event.type == RealtimeEventType.ERROR:
+            self.show_error("Live session", event.error or "Realtime session failed")
+        return False
+
+    def on_live_error(self, message: str) -> bool:
+        self.show_error("Live session", message)
+        self.status_label.set_text("Live session error")
+        return False
 
     # ------------------------------------------------------------------
     # Audio handling
@@ -297,7 +347,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         try:
             audio = np.concatenate(self.audio_frames, axis=0) if self.audio_frames else np.array([], dtype=np.float32)
             if not len(audio):
-                GLib.idle_add(self.status_label.set_text, "Press to start recording")
+                GLib.idle_add(self.status_label.set_text, "Press to start listening")
                 return
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 sf.write(tmp.name, audio, 16000)
@@ -326,7 +376,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             LOGGER.exception("Unexpected transcription failure")
             GLib.idle_add(self.show_error, "Transcription", str(exc))
         finally:
-            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+            GLib.idle_add(self.status_label.set_text, "Press to start listening")
             GLib.idle_add(self.level.set_value, 0.0)
             GLib.idle_add(self.timer_label.set_text, "00:00:00")
 
@@ -335,9 +385,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         buffer.set_text(text)
 
     def play_transcript(self, _button: Gtk.Button) -> None:
-        buffer = self.text_view.get_buffer()
-        start, end = buffer.get_bounds()
-        text = buffer.get_text(start, end, True).strip()
+        text = self._combined_transcript_text().strip()
         if not text:
             self.show_warning("No text", "Transcript area is empty.")
             return
@@ -355,7 +403,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
             LOGGER.exception("Audio generation failed")
             GLib.idle_add(self.show_error, "Audio error", str(exc))
         finally:
-            GLib.idle_add(self.status_label.set_text, "Press to start recording")
+            GLib.idle_add(self.status_label.set_text, "Press to start listening")
 
     def play_audio_with_feedback(self, data: np.ndarray, sr: int) -> None:
         if data.ndim == 1:
@@ -401,9 +449,7 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
     # ------------------------------------------------------------------
 
     def save_transcript(self, _button: Gtk.Button) -> None:
-        buffer = self.text_view.get_buffer()
-        start, end = buffer.get_bounds()
-        text = buffer.get_text(start, end, True).strip()
+        text = self._combined_transcript_text().strip()
         if not text:
             self.show_warning("No text", "Transcript area is empty.")
             return
@@ -434,15 +480,24 @@ class DictAiTeWindow(Gtk.ApplicationWindow):
         dialog.close()
 
     def copy_transcript(self, _button: Gtk.Button) -> None:
-        buffer = self.text_view.get_buffer()
-        start, end = buffer.get_bounds()
-        text = buffer.get_text(start, end, True)
+        text = self._combined_transcript_text()
         display = self.get_display()
         if not display:
             return
         clipboard = display.get_clipboard()
         provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", GLib.Bytes.new(text.encode("utf-8")))
         clipboard.set_content(provider)
+
+    def _combined_transcript_text(self) -> str:
+        source_buffer = self.text_view.get_buffer()
+        source_start, source_end = source_buffer.get_bounds()
+        source = source_buffer.get_text(source_start, source_end, True).strip()
+        translated_buffer = self.translated_text_view.get_buffer()
+        translated_start, translated_end = translated_buffer.get_bounds()
+        translated = translated_buffer.get_text(translated_start, translated_end, True).strip()
+        if source and translated:
+            return f"Source:\n{source}\n\nTranslation:\n{translated}"
+        return translated or source
 
     # ------------------------------------------------------------------
     # Dialog helpers

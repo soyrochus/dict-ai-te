@@ -3,8 +3,8 @@ mod audio;
 mod constants;
 mod error;
 mod openai;
+mod realtime;
 mod settings;
-mod text_utils;
 
 use app::DictaiteApp;
 use openai::OpenAiClient;
@@ -43,26 +43,67 @@ fn configure_fonts(ctx: &egui::Context) {
     let candidates: &[(&str, &str)] = &[
         // Local project assets (if you choose to vendor fonts):
         ("NotoSans-Regular", "assets/fonts/NotoSans-Regular.ttf"),
-        ("NotoSansCJK-Regular", "assets/fonts/NotoSansCJK-Regular.ttc"),
+        (
+            "NotoSansCJK-Regular",
+            "assets/fonts/NotoSansCJK-Regular.ttc",
+        ),
         ("NotoSansJP-Regular", "assets/fonts/NotoSansJP-Regular.otf"),
         ("NotoSansKR-Regular", "assets/fonts/NotoSansKR-Regular.otf"),
         ("NotoSansSC-Regular", "assets/fonts/NotoSansSC-Regular.otf"),
-        ("NotoSansArabic-Regular", "assets/fonts/NotoSansArabic-Regular.ttf"),
-        ("NotoSansDevanagari-Regular", "assets/fonts/NotoSansDevanagari-Regular.ttf"),
-        ("NotoSansHebrew-Regular", "assets/fonts/NotoSansHebrew-Regular.ttf"),
-        ("NotoSansThai-Regular", "assets/fonts/NotoSansThai-Regular.ttf"),
-
+        (
+            "NotoSansArabic-Regular",
+            "assets/fonts/NotoSansArabic-Regular.ttf",
+        ),
+        (
+            "NotoSansDevanagari-Regular",
+            "assets/fonts/NotoSansDevanagari-Regular.ttf",
+        ),
+        (
+            "NotoSansHebrew-Regular",
+            "assets/fonts/NotoSansHebrew-Regular.ttf",
+        ),
+        (
+            "NotoSansThai-Regular",
+            "assets/fonts/NotoSansThai-Regular.ttf",
+        ),
         // Typical Linux paths (Ubuntu/Debian):
-        ("NotoSans-Regular", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
-        ("NotoSansArabic-Regular", "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"),
-        ("NotoSansDevanagari-Regular", "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf"),
-        ("NotoSansHebrew-Regular", "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf"),
-        ("NotoSansThai-Regular", "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf"),
+        (
+            "NotoSans-Regular",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        ),
+        (
+            "NotoSansArabic-Regular",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+        ),
+        (
+            "NotoSansDevanagari-Regular",
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+        ),
+        (
+            "NotoSansHebrew-Regular",
+            "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+        ),
+        (
+            "NotoSansThai-Regular",
+            "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+        ),
         // CJK often installed as TTC/OTF in these dirs:
-        ("NotoSansCJK-Regular", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        ("NotoSansJP-Regular", "/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf"),
-        ("NotoSansKR-Regular", "/usr/share/fonts/opentype/noto/NotoSansKR-Regular.otf"),
-        ("NotoSansSC-Regular", "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf"),
+        (
+            "NotoSansCJK-Regular",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        ),
+        (
+            "NotoSansJP-Regular",
+            "/usr/share/fonts/opentype/noto/NotoSansJP-Regular.otf",
+        ),
+        (
+            "NotoSansKR-Regular",
+            "/usr/share/fonts/opentype/noto/NotoSansKR-Regular.otf",
+        ),
+        (
+            "NotoSansSC-Regular",
+            "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf",
+        ),
     ];
 
     for (name, path) in candidates {
@@ -74,7 +115,7 @@ fn configure_fonts(ctx: &egui::Context) {
 
 fn main() -> eframe::Result<()> {
     dotenvy::dotenv().ok();
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
     let openai_client = match OpenAiClient::from_env() {
         Ok(client) => Some(client),

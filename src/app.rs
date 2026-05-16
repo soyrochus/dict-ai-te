@@ -6,14 +6,23 @@ use arboard::Clipboard;
 use eframe::App;
 use egui::{self, Align, Color32, Context, Frame, Layout, RichText, Ui, Vec2};
 
-use crate::audio::{AudioClip, AudioPlayer, Recorder};
+use crate::audio::{AudioClip, AudioPlayer, LiveCapture};
 use crate::constants::{FEMALE_VOICES, LANGUAGES, MALE_VOICES, VOICE_SAMPLE_TEXT};
 use crate::error::AppError;
 use crate::openai::OpenAiClient;
+use crate::realtime::events::RealtimeEvent;
+use crate::realtime::state::LiveState;
+use crate::realtime::transcript::TranscriptAssembler;
+use crate::realtime::transport::{run_live_transcription, RealtimeSessionConfig};
 use crate::settings::{load_settings, save_settings, Settings};
 
 pub struct DictaiteApp {
-    recorder: Recorder,
+    live_capture: Option<LiveCapture>,
+    live_runtime: Option<tokio::runtime::Runtime>,
+    live_event_tx: mpsc::Sender<RealtimeEvent>,
+    live_event_rx: mpsc::Receiver<RealtimeEvent>,
+    live_stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    live_state: LiveState,
     is_recording: bool,
     record_started_at: Option<Instant>,
     player: Option<AudioPlayer>,
@@ -29,14 +38,15 @@ pub struct DictaiteApp {
 
     transcript: String,
     raw_transcript: Option<String>,
+    source_transcript: String,
+    translated_transcript: String,
+    source_assembler: TranscriptAssembler,
 
     preferred_gender: VoiceGender,
 
-    recorded_clip: Option<AudioClip>,
     tts_clip: Option<AudioClip>,
     tts_voice_id: Option<String>,
 
-    transcription_task: Option<BackgroundTask<TranscriptionOutcome>>,
     tts_task: Option<BackgroundTask<TtsOutcome>>,
 
     status_text: String,
@@ -56,8 +66,26 @@ impl DictaiteApp {
             Err(err) => (None, Some(err.to_string())),
         };
 
+        let (live_event_tx, live_event_rx) = mpsc::channel();
+        let live_runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name("dictaite-realtime")
+            .build()
+        {
+            Ok(runtime) => Some(runtime),
+            Err(err) => {
+                log::error!("Failed to initialise realtime runtime: {err}");
+                None
+            }
+        };
+
         let mut app = Self {
-            recorder: Recorder::new(),
+            live_capture: None,
+            live_runtime,
+            live_event_tx,
+            live_event_rx,
+            live_stop_tx: None,
+            live_state: LiveState::Disconnected,
             is_recording: false,
             record_started_at: None,
             player,
@@ -70,13 +98,14 @@ impl DictaiteApp {
             target_language_index,
             transcript: String::new(),
             raw_transcript: None,
+            source_transcript: String::new(),
+            translated_transcript: String::new(),
+            source_assembler: TranscriptAssembler::default(),
             preferred_gender: VoiceGender::Female,
-            recorded_clip: None,
             tts_clip: None,
             tts_voice_id: None,
-            transcription_task: None,
             tts_task: None,
-            status_text: "Press to start recording".to_string(),
+            status_text: "Press to start listening".to_string(),
             error_text: None,
             copy_feedback_until: None,
         };
@@ -99,27 +128,81 @@ impl DictaiteApp {
     }
 
     fn start_recording(&mut self) {
-        if self.transcription_task.is_some() {
-            self.transcription_task = None;
+        if self.is_recording {
+            return;
         }
         self.tts_task = None;
-        self.is_recording = true;
-        self.record_started_at = Some(Instant::now());
-        self.status_text = "Recording...".to_string();
         self.error_text = None;
-        match self.recorder.start() {
-            Ok(()) => {
-                self.recorded_clip = None;
-                self.tts_clip = None;
-                self.tts_voice_id = None;
-                self.raw_transcript = None;
-                self.transcript.clear();
+        self.source_assembler = TranscriptAssembler::default();
+        self.source_transcript.clear();
+        self.translated_transcript.clear();
+        self.transcript.clear();
+        self.raw_transcript = None;
+        self.tts_clip = None;
+        self.tts_voice_id = None;
+
+        let Some(client) = self.openai.clone() else {
+            self.error_text = Some("OpenAI client unavailable".to_string());
+            self.live_state = LiveState::Error;
+            return;
+        };
+        let Some(runtime) = &self.live_runtime else {
+            self.error_text = Some("Realtime runtime unavailable".to_string());
+            self.live_state = LiveState::Error;
+            return;
+        };
+
+        let translate = self.translate_enabled && self.target_language_index > 0;
+        let source_language = if self.origin_language_index == 0 {
+            None
+        } else {
+            Some(LANGUAGES[self.origin_language_index].code.to_string())
+        };
+        if translate {
+            self.live_state = LiveState::Error;
+            self.status_text = "Live translation unavailable".to_string();
+            self.error_text = Some(
+                "Live translation is unavailable: no current official OpenAI Realtime translation endpoint/model contract was verified for Rust.".to_string(),
+            );
+            return;
+        }
+
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::channel(32);
+        let (rt_event_tx, mut rt_event_rx) = tokio::sync::mpsc::channel(128);
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        let ui_tx = self.live_event_tx.clone();
+        runtime.spawn(async move {
+            while let Some(event) = rt_event_rx.recv().await {
+                let _ = ui_tx.send(event);
+            }
+        });
+
+        let config = RealtimeSessionConfig {
+            api_key: client.api_key().to_string(),
+            source_language,
+        };
+        runtime.spawn(async move {
+            let _ = run_live_transcription(config, audio_rx, rt_event_tx, stop_rx).await;
+        });
+
+        match LiveCapture::start(audio_tx, self.live_event_tx.clone()) {
+            Ok(capture) => {
+                self.live_capture = Some(capture);
+                self.live_stop_tx = Some(stop_tx);
+                self.is_recording = true;
+                self.record_started_at = Some(Instant::now());
+                self.live_state = LiveState::connected(translate);
+                self.status_text = if translate {
+                    "Live translation unavailable until the OpenAI Realtime translation API contract is verified".to_string()
+                } else {
+                    "Listening live...".to_string()
+                };
             }
             Err(err) => {
-                self.is_recording = false;
-                self.record_started_at = None;
-                self.status_text = "Press to start recording".to_string();
+                let _ = stop_tx.send(());
+                self.live_state = LiveState::Error;
                 self.error_text = Some(err.to_string());
+                self.status_text = "Press to start listening".to_string();
             }
         }
     }
@@ -127,18 +210,14 @@ impl DictaiteApp {
     fn stop_recording(&mut self) {
         self.is_recording = false;
         self.record_started_at = None;
-        match self.recorder.stop() {
-            Ok(Some(clip)) => {
-                self.status_text = "Transcribing...".to_string();
-                self.begin_transcription(clip);
-            }
-            Ok(None) => {
-                self.status_text = "No audio captured".to_string();
-            }
-            Err(err) => {
-                self.error_text = Some(err.to_string());
-            }
+        if let Some(mut capture) = self.live_capture.take() {
+            capture.stop();
         }
+        if let Some(stop_tx) = self.live_stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        self.live_state = self.live_state.stop();
+        self.status_text = "Stopped".to_string();
     }
 
     fn show_record_controls(&mut self, ui: &mut Ui, ctx: &Context) {
@@ -154,9 +233,9 @@ impl DictaiteApp {
                 ui.add_space(8.0);
 
                 let button_label = if self.is_recording {
-                    "Stop Recording"
+                    "Stop Listening"
                 } else {
-                    "Start Recording"
+                    "Start Listening"
                 };
                 if ui
                     .add_sized(
@@ -179,7 +258,7 @@ impl DictaiteApp {
                     let elapsed = self
                         .record_started_at
                         .map(|instant| instant.elapsed())
-                        .unwrap_or_else(|| self.recorder.elapsed());
+                        .unwrap_or_default();
                     ui.label(RichText::new(time_display(elapsed)).monospace());
                 } else if let Some(player) = &self.player {
                     if player.is_playing() {
@@ -199,88 +278,78 @@ impl DictaiteApp {
             });
     }
 
-    fn begin_transcription(&mut self, mut clip: AudioClip) {
-        let Some(client) = self.openai.clone() else {
-            self.error_text = Some("OpenAI client unavailable".to_string());
-            return;
-        };
-        let Ok(wav_arc) = clip.wav_bytes() else {
-            self.error_text = Some("Failed to prepare audio clip".to_string());
-            return;
-        };
-        let wav_bytes = (*wav_arc).clone();
-        let translate = self.translate_enabled && self.target_language_index > 0;
-        let language_code = if self.origin_language_index == 0 {
-            None
-        } else {
-            Some(LANGUAGES[self.origin_language_index].code.to_string())
-        };
-        let target_language = if translate {
-            Some(LANGUAGES[self.target_language_index].name.to_string())
-        } else {
-            None
-        };
-
-        self.recorded_clip = Some(clip);
-        self.tts_clip = None;
-        self.tts_voice_id = None;
-        self.transcription_task = Some(BackgroundTask::spawn(move || {
-            let transcript = client.transcribe(&wav_bytes, language_code.as_deref())?;
-            let mut translated = None;
-            let mut translation_error = None;
-            let mut translation_lang = None;
-            if let Some(target) = target_language {
-                match client.translate(&transcript, &target) {
-                    Ok(result) => {
-                        translated = Some(result);
-                        translation_lang = Some(target);
-                    }
-                    Err(err) => {
-                        translation_error = Some(err.to_string());
+    fn poll_live_events(&mut self, ctx: &Context) {
+        while let Ok(event) = self.live_event_rx.try_recv() {
+            match event {
+                RealtimeEvent::SourceDelta { item_id, text } => {
+                    self.source_assembler.add_delta(item_id.as_deref(), &text);
+                    self.source_transcript = self.source_assembler.text();
+                    self.transcript = self.source_transcript.clone();
+                    self.raw_transcript = Some(self.source_transcript.clone());
+                }
+                RealtimeEvent::SourceCompleted { item_id, text } => {
+                    self.source_assembler.complete(item_id.as_deref(), &text);
+                    self.source_transcript = self.source_assembler.text();
+                    self.transcript = self.source_transcript.clone();
+                    self.raw_transcript = Some(self.source_transcript.clone());
+                }
+                RealtimeEvent::TranslationDelta { text } => {
+                    self.translated_transcript.push_str(&text);
+                    self.transcript = self.translated_transcript.clone();
+                }
+                RealtimeEvent::TranslatedAudioDelta => {}
+                RealtimeEvent::SessionState { state } => {
+                    self.status_text = live_state_text(&state);
+                    if state == "disconnected" {
+                        self.live_state = LiveState::Disconnected;
+                        self.is_recording = false;
+                        self.record_started_at = None;
+                        if let Some(mut capture) = self.live_capture.take() {
+                            capture.stop();
+                        }
+                        self.live_stop_tx = None;
                     }
                 }
+                RealtimeEvent::Error { message } => {
+                    self.error_text = Some(message);
+                    self.live_state = LiveState::Error;
+                    self.status_text = "Live session error".to_string();
+                    self.is_recording = false;
+                    self.record_started_at = None;
+                    if let Some(mut capture) = self.live_capture.take() {
+                        capture.stop();
+                    }
+                    self.live_stop_tx = None;
+                }
+                RealtimeEvent::Unknown { .. } => {}
             }
-            Ok(TranscriptionOutcome {
-                transcript,
-                translated,
-                translation_lang,
-                translation_error,
-            })
-        }));
-    }
+            ctx.request_repaint();
+        }
 
-    fn poll_transcription(&mut self, ctx: &Context) {
-        if let Some(task) = &mut self.transcription_task {
-            if let Some(result) = task.try_take() {
-                self.transcription_task = None;
-                match result {
-                    Ok(outcome) => {
-                        self.raw_transcript = Some(outcome.transcript.clone());
-                        if let Some(text) = outcome.translated {
-                            self.transcript = text;
-                            if let Some(lang) = outcome.translation_lang {
-                                self.status_text = format!("Translated to {lang}");
-                            } else {
-                                self.status_text = "Translation complete".to_string();
-                            }
-                        } else {
-                            self.transcript = outcome.transcript;
-                            self.status_text = "Transcription complete".to_string();
-                        }
-                        if let Some(err) = outcome.translation_error {
-                            self.error_text = Some(format!("Translation failed: {err}"));
-                        } else {
-                            self.error_text = None;
-                        }
-                    }
-                    Err(err) => {
-                        self.error_text = Some(err.to_string());
-                        self.status_text = "Transcription failed".to_string();
-                    }
-                }
-            } else {
+        if let Some(capture) = &self.live_capture {
+            if let Some(err) = capture.take_error() {
+                self.error_text = Some(format!("Microphone error: {err}"));
+                self.live_state = LiveState::Error;
                 ctx.request_repaint();
             }
+        }
+    }
+
+    fn transcript_for_actions(&self) -> String {
+        if self.translate_enabled && !self.translated_transcript.trim().is_empty() {
+            let mut parts = Vec::new();
+            if !self.source_transcript.trim().is_empty() {
+                parts.push(format!("Source:\n{}", self.source_transcript.trim()));
+            }
+            parts.push(format!(
+                "Translation:\n{}",
+                self.translated_transcript.trim()
+            ));
+            parts.join("\n\n")
+        } else if !self.source_transcript.trim().is_empty() {
+            self.source_transcript.clone()
+        } else {
+            self.transcript.clone()
         }
     }
 
@@ -344,12 +413,13 @@ impl DictaiteApp {
     }
 
     fn copy_transcript(&mut self) {
-        if self.transcript.trim().is_empty() {
+        let text = self.transcript_for_actions();
+        if text.trim().is_empty() {
             return;
         }
         match Clipboard::new() {
             Ok(mut clipboard) => {
-                if clipboard.set_text(self.transcript.clone()).is_ok() {
+                if clipboard.set_text(text).is_ok() {
                     self.copy_feedback_until = Some(Instant::now() + Duration::from_secs(2));
                     self.status_text = "Copied transcript".to_string();
                 }
@@ -361,7 +431,8 @@ impl DictaiteApp {
     }
 
     fn save_transcript(&mut self) {
-        if self.transcript.trim().is_empty() {
+        let text = self.transcript_for_actions();
+        if text.trim().is_empty() {
             return;
         }
         if let Some(path) = rfd::FileDialog::new()
@@ -369,7 +440,7 @@ impl DictaiteApp {
             .set_file_name("transcript.txt")
             .save_file()
         {
-            if let Err(err) = fs::write(&path, self.transcript.as_bytes()) {
+            if let Err(err) = fs::write(&path, text.as_bytes()) {
                 self.error_text = Some(format!("Failed to save file: {err}"));
             } else {
                 self.status_text = format!("Transcript saved to {}", path.display());
@@ -379,7 +450,13 @@ impl DictaiteApp {
     }
 
     fn play_transcript_audio(&mut self) {
-        let text = self.transcript.trim();
+        let text = if self.translate_enabled && !self.translated_transcript.trim().is_empty() {
+            self.translated_transcript.trim()
+        } else if !self.source_transcript.trim().is_empty() {
+            self.source_transcript.trim()
+        } else {
+            self.transcript.trim()
+        };
         if text.is_empty() {
             self.error_text = Some("Transcript is empty".to_string());
             return;
@@ -437,7 +514,7 @@ impl DictaiteApp {
 
 impl App for DictaiteApp {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        self.poll_transcription(ctx);
+        self.poll_live_events(ctx);
         self.poll_tts(ctx);
         if let Some(player) = &mut self.player {
             player.refresh();
@@ -498,9 +575,9 @@ impl App for DictaiteApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // let top_button_label = if self.is_recording {
-            //     "Stop Recording"
+            //     "Stop Listening"
             // } else {
-            //     "Start Recording"
+            //     "Start Listening"
             // };
             // let full_width = ui.available_width();
             // if ui
@@ -520,7 +597,10 @@ impl App for DictaiteApp {
 
             ui.add_space(6.0);
             let level = if self.is_recording {
-                self.recorder.current_level()
+                self.live_capture
+                    .as_ref()
+                    .map(LiveCapture::current_level)
+                    .unwrap_or(0.0)
             } else if let Some(player) = &self.player {
                 if player.is_playing() {
                     player.level()
@@ -555,9 +635,9 @@ impl App for DictaiteApp {
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label("Translate to");
+                ui.label("Translate Live");
                 let mut flag = self.translate_enabled;
-                if ui.toggle_value(&mut flag, "").changed() {
+                if ui.checkbox(&mut flag, "").changed() {
                     self.translate_enabled = flag;
                     if !flag {
                         if let Some(original) = &self.raw_transcript {
@@ -567,7 +647,8 @@ impl App for DictaiteApp {
                 }
             });
 
-            ui.add_enabled_ui(self.translate_enabled, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Target language");
                 egui::ComboBox::from_id_source("target_lang")
                     .selected_text(LANGUAGES[self.target_language_index].name)
                     .show_ui(ui, |ui| {
@@ -581,16 +662,40 @@ impl App for DictaiteApp {
             });
 
             ui.add_space(10.0);
-            // Make the transcript editor fill the remaining space in the central panel
             let width = ui.available_width();
             let height = ui.available_height();
-            let response = ui.add_sized(
-                Vec2::new(width, height),
-                egui::TextEdit::multiline(&mut self.transcript)
-                    .hint_text("Transcribed text will appear here…"),
-            );
-            if response.changed() {
-                self.raw_transcript = Some(self.transcript.clone());
+            if self.translate_enabled {
+                let pane_height = (height - 32.0).max(120.0) / 2.0;
+                ui.label("Source transcript");
+                let source_response = ui.add_sized(
+                    Vec2::new(width, pane_height),
+                    egui::TextEdit::multiline(&mut self.source_transcript)
+                        .hint_text("Source speech will appear here..."),
+                );
+                if source_response.changed() {
+                    self.transcript = self.source_transcript.clone();
+                    self.raw_transcript = Some(self.source_transcript.clone());
+                }
+                ui.add_space(8.0);
+                ui.label("Translated transcript");
+                let translated_response = ui.add_sized(
+                    Vec2::new(width, pane_height),
+                    egui::TextEdit::multiline(&mut self.translated_transcript)
+                        .hint_text("Live translation will appear here..."),
+                );
+                if translated_response.changed() {
+                    self.transcript = self.translated_transcript.clone();
+                }
+            } else {
+                let response = ui.add_sized(
+                    Vec2::new(width, height),
+                    egui::TextEdit::multiline(&mut self.source_transcript)
+                        .hint_text("Transcribed text will appear here..."),
+                );
+                if response.changed() {
+                    self.transcript = self.source_transcript.clone();
+                    self.raw_transcript = Some(self.source_transcript.clone());
+                }
             }
         });
 
@@ -610,17 +715,10 @@ impl App for DictaiteApp {
             }
         }
 
-        if self.is_recording || self.transcription_task.is_some() {
+        if self.is_recording {
             ctx.request_repaint();
         }
     }
-}
-
-struct TranscriptionOutcome {
-    transcript: String,
-    translated: Option<String>,
-    translation_lang: Option<String>,
-    translation_error: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -717,10 +815,11 @@ impl SettingsModal {
 
             ui.horizontal(|ui| {
                 ui.label("Translate by default");
-                ui.toggle_value(&mut self.translate_default, "");
+                ui.checkbox(&mut self.translate_default, "");
             });
 
-            ui.add_enabled_ui(self.translate_default, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Default target language");
                 egui::ComboBox::from_id_source("settings_target_language")
                     .selected_text(LANGUAGES[self.target_index].name)
                     .show_ui(ui, |ui| {
@@ -810,6 +909,17 @@ fn time_display(duration: Duration) -> String {
     let m = (secs % 3600) / 60;
     let s = secs % 60;
     format!("{h:02}:{m:02}:{s:02}")
+}
+
+fn live_state_text(state: &str) -> String {
+    match state {
+        "session.created" | "session.updated" | "connecting" => {
+            "Connected to live session".to_string()
+        }
+        "audio.capture.stopped" => "Audio capture stopped".to_string(),
+        "disconnected" => "Disconnected".to_string(),
+        other => format!("Live state: {other}"),
+    }
 }
 
 fn language_index(code: Option<&str>) -> usize {
