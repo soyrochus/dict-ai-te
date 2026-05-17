@@ -9,8 +9,8 @@ arboard = "3.3"
 cpal = { version = "0.15", features = ["jack"] }
 dirs = "5.0"
 dotenvy = "0.15"
-eframe = { version = "0.27", features = ["wgpu", "x11", "wayland"] }
-egui = "0.27"
+eframe = { version = "0.34", features = ["wgpu", "x11", "wayland"] }
+egui = "0.34"
 env_logger = "0.11"
 hound = "3.5"
 once_cell = "1.19"

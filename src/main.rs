@@ -20,7 +20,7 @@ fn configure_fonts(ctx: &egui::Context) {
             if let Ok(bytes) = std::fs::read(path) {
                 fonts
                     .font_data
-                    .insert(name.to_owned(), egui::FontData::from_owned(bytes));
+                    .insert(name.to_owned(), egui::FontData::from_owned(bytes).into());
                 // Add as a fallback for proportional text
                 fonts
                     .families
@@ -144,7 +144,7 @@ fn main() -> eframe::Result<()> {
             // Ensure fonts cover non-Latin scripts used in language names
             configure_fonts(&cc.egui_ctx);
             let client = openai_client.clone();
-            Box::new(DictaiteApp::new(client))
+            Ok(Box::new(DictaiteApp::new(client)))
         }),
     )
 }

@@ -1,5 +1,9 @@
 """Entry point for the GTK application."""
 
+from .ui_gtk.bootstrap import ensure_macos_gtk_paths
+
+ensure_macos_gtk_paths("dictaite")
+
 from .ui_gtk.app import main
 
 

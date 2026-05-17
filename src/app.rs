@@ -231,13 +231,13 @@ impl DictaiteApp {
 
     fn show_record_controls(&mut self, ui: &mut Ui, ctx: &Context) {
         let available_width = ui.available_width();
-        let frame_margin = egui::Margin::same(12.0);
+        let frame_margin = egui::Margin::same(12);
         Frame::group(ui.style())
             .inner_margin(frame_margin)
-            .rounding(egui::Rounding::same(8.0))
+            .corner_radius(egui::CornerRadius::same(8))
             .show(ui, |ui| {
                 let content_width =
-                    (available_width - frame_margin.left - frame_margin.right).max(0.0);
+                    (available_width - f32::from(frame_margin.left + frame_margin.right)).max(0.0);
                 ui.set_width(content_width);
                 ui.add_space(8.0);
 
@@ -522,14 +522,16 @@ impl DictaiteApp {
 }
 
 impl App for DictaiteApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        self.poll_live_events(ctx);
-        self.poll_tts(ctx);
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
+        self.poll_live_events(&ctx);
+        self.poll_tts(&ctx);
         if let Some(player) = &mut self.player {
             player.refresh();
         }
 
-        egui::TopBottomPanel::top("topbar").show(ctx, |ui| {
+        egui::Panel::top("topbar").show_inside(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(RichText::new("dict-ai-te").heading());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -541,7 +543,7 @@ impl App for DictaiteApp {
         });
 
         // Bottom controls bar anchored to the window bottom
-        egui::TopBottomPanel::bottom("controls_bar").show(ctx, |ui| {
+        egui::Panel::bottom("controls_bar").show_inside(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if ui.button("⬇ Save").clicked() {
@@ -582,7 +584,7 @@ impl App for DictaiteApp {
             self.update_copy_feedback(ui);
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             // let top_button_label = if self.is_recording {
             //     "Stop Listening"
             // } else {
@@ -622,14 +624,14 @@ impl App for DictaiteApp {
             ui.add(egui::widgets::ProgressBar::new(level).desired_width(ui.available_width()));
 
             ui.add_space(8.0);
-            self.show_record_controls(ui, ctx);
+            self.show_record_controls(ui, &ctx);
 
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.label("Origin language");
                 ui.separator();
             });
-            egui::ComboBox::from_id_source("origin_lang")
+            egui::ComboBox::from_id_salt("origin_lang")
                 .selected_text(LANGUAGES[self.origin_language_index].name)
                 .show_ui(ui, |ui| {
                     for (idx, lang) in LANGUAGES.iter().enumerate() {
@@ -659,7 +661,7 @@ impl App for DictaiteApp {
             if self.translate_enabled {
                 ui.horizontal(|ui| {
                     ui.label("Target language");
-                    egui::ComboBox::from_id_source("target_lang")
+                    egui::ComboBox::from_id_salt("target_lang")
                         .selected_text(LANGUAGES[self.target_language_index].name)
                         .show_ui(ui, |ui| {
                             for (idx, lang) in LANGUAGES.iter().enumerate() {
@@ -722,7 +724,7 @@ impl App for DictaiteApp {
                 .resizable(false)
                 .default_size(Vec2::new(380.0, 360.0))
                 .open(&mut open)
-                .show(ctx, |ui| {
+                .show(&ctx, |ui| {
                     keep_modal = modal.show(ui, self);
                 });
             if open && keep_modal {
@@ -820,7 +822,7 @@ impl SettingsModal {
 
         ui.vertical(|ui| {
             ui.label("Default language");
-            egui::ComboBox::from_id_source("settings_default_language")
+            egui::ComboBox::from_id_salt("settings_default_language")
                 .selected_text(LANGUAGES[self.language_index].name)
                 .show_ui(ui, |ui| {
                     for (idx, lang) in LANGUAGES.iter().enumerate() {
@@ -835,7 +837,7 @@ impl SettingsModal {
 
             ui.horizontal(|ui| {
                 ui.label("Default target language");
-                egui::ComboBox::from_id_source("settings_target_language")
+                egui::ComboBox::from_id_salt("settings_target_language")
                     .selected_text(LANGUAGES[self.target_index].name)
                     .show_ui(ui, |ui| {
                         for (idx, lang) in LANGUAGES.iter().enumerate() {
@@ -851,7 +853,7 @@ impl SettingsModal {
 
             ui.horizontal(|ui| {
                 ui.label("Female voice");
-                egui::ComboBox::from_id_source("settings_female_voice")
+                egui::ComboBox::from_id_salt("settings_female_voice")
                     .selected_text(FEMALE_VOICES[self.female_voice_index].label)
                     .show_ui(ui, |ui| {
                         for (idx, voice) in FEMALE_VOICES.iter().enumerate() {
@@ -866,7 +868,7 @@ impl SettingsModal {
 
             ui.horizontal(|ui| {
                 ui.label("Male voice");
-                egui::ComboBox::from_id_source("settings_male_voice")
+                egui::ComboBox::from_id_salt("settings_male_voice")
                     .selected_text(MALE_VOICES[self.male_voice_index].label)
                     .show_ui(ui, |ui| {
                         for (idx, voice) in MALE_VOICES.iter().enumerate() {

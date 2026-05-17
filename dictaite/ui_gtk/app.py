@@ -20,7 +20,10 @@ from dictaite_core.realtime import LiveMode, NormalizedEvent, RealtimeEventType,
 from dictaite_core.services import synthesize_speech
 
 from ..ui_common import FEMALE_VOICES, LANGUAGES, LANGUAGE_NAME, MALE_VOICES, VOICE_SAMPLE_TEXT
-from .live import GtkLiveSession
+from .bootstrap import ensure_macos_gtk_paths
+
+if __name__ == "__main__":
+    ensure_macos_gtk_paths("dictaite.ui_gtk.app")
 
 import gi
 
@@ -28,6 +31,8 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+
+from .live import GtkLiveSession  # noqa: E402
 
 LOGGER = logging.getLogger(__name__)
 
