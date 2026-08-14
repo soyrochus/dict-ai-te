@@ -71,6 +71,7 @@
 - [x] 7.8 Implement the 600 ms silence finalization (final decode, `SourceCompleted`, seal) and the 15 s force-cut that finalizes and immediately opens a new segment
 - [x] 7.9 Pass the language hint through from the Origin selector, with `default` mapping to auto-detect
 - [x] 7.10 Add unit tests for the segmentation state machine driven by a synthetic VAD: onset, silence close, force-cut, skipped overlapping partials, no decode during silence
+- [x] 7.11 Restrict the `metal` dependency feature to macOS so Linux builds cannot enable the whisper.cpp Metal backend and fail while resolving Apple frameworks
 
 ## 8. Phase 4 — Model management
 

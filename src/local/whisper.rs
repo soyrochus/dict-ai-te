@@ -86,9 +86,12 @@ impl LocalEngine for WhisperEngine {
     fn start(&mut self, config: &LocalSessionConfig) -> Result<(), AppError> {
         let requested_gpu = match config.device.as_str() {
             "cpu" => false,
-            "metal" => cfg!(feature = "metal"),
+            "metal" => cfg!(all(feature = "metal", target_os = "macos")),
             "cuda" => cfg!(feature = "cuda"),
-            "auto" => cfg!(any(feature = "metal", feature = "cuda")),
+            "auto" => cfg!(any(
+                all(feature = "metal", target_os = "macos"),
+                feature = "cuda"
+            )),
             other => {
                 return Err(AppError::Message(format!(
                     "Unsupported local device '{other}'"

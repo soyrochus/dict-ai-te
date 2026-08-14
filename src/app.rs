@@ -281,7 +281,7 @@ impl DictaiteApp {
         };
         let mut language_hint = source_language;
         let device_warning = match self.settings.local.device.as_str() {
-            "metal" if !cfg!(feature = "metal") => {
+            "metal" if !cfg!(all(feature = "metal", target_os = "macos")) => {
                 Some("Metal is unavailable in this build; using CPU".to_string())
             }
             "cuda" if !cfg!(feature = "cuda") => {
