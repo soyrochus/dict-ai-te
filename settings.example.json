@@ -1,0 +1,17 @@
+{
+  "default_language": null,
+  "translate_by_default": false,
+  "default_target_language": "en",
+  "female_voice": "nova",
+  "male_voice": "onyx",
+  "backend": "openai",
+  "openai": {
+    "api_key": null
+  },
+  "local": {
+    "engine": "whisper",
+    "model": "base.en",
+    "model_path": null,
+    "device": "auto"
+  }
+}

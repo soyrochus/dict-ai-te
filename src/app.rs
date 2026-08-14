@@ -25,7 +25,10 @@ use crate::realtime::transcript::TranscriptAssembler;
 use crate::realtime::transport::{
     run_live_transcription, run_live_translation, RealtimeSessionConfig,
 };
-use crate::settings::{effective_translate, load_settings, save_settings, Backend, Settings};
+use crate::settings::{
+    effective_translate, load_settings, resolve_api_key, resolve_api_key_from, save_settings,
+    ApiKeySource, Backend, Settings,
+};
 
 pub struct DictaiteApp {
     live_capture: Option<LiveCapture>,
@@ -40,8 +43,6 @@ pub struct DictaiteApp {
     record_started_at: Option<Instant>,
     player: Option<AudioPlayer>,
     player_error: Option<String>,
-    openai: Option<OpenAiClient>,
-
     settings: Settings,
     settings_modal: Option<SettingsModal>,
 
@@ -70,7 +71,7 @@ pub struct DictaiteApp {
 }
 
 impl DictaiteApp {
-    pub fn new(openai: Option<OpenAiClient>) -> Self {
+    pub fn new() -> Self {
         let settings = load_settings();
         let origin_language_index = language_index(settings.default_language.as_deref());
         let target_language_index =
@@ -95,7 +96,6 @@ impl DictaiteApp {
             record_started_at: None,
             player,
             player_error,
-            openai,
             settings,
             settings_modal: None,
             origin_language_index,
@@ -130,9 +130,16 @@ impl DictaiteApp {
     }
 
     fn maybe_warn_api_key(&mut self) {
-        if effective_live_backend(&self.settings) == LiveBackend::OpenAi && self.openai.is_none() {
-            self.error_text = Some("OPENAI_API_KEY not configured".to_string());
+        let key_present = resolve_api_key(&self.settings).as_str().is_some();
+        if should_warn_missing_key(&self.settings, key_present) {
+            self.error_text = Some(AppError::MissingApiKey.to_string());
         }
+    }
+
+    fn openai_client(&self) -> Result<OpenAiClient, AppError> {
+        let resolved = resolve_api_key(&self.settings);
+        let key = resolved.as_str().ok_or(AppError::MissingApiKey)?;
+        OpenAiClient::with_api_key(key)
     }
 
     fn start_recording(&mut self) {
@@ -182,10 +189,13 @@ impl DictaiteApp {
     }
 
     fn start_remote_recording(&mut self) {
-        let Some(client) = self.openai.clone() else {
-            self.error_text = Some("OpenAI client unavailable".to_string());
-            self.live_state = LiveState::Error;
-            return;
+        let client = match self.openai_client() {
+            Ok(client) => client,
+            Err(err) => {
+                self.error_text = Some(err.to_string());
+                self.live_state = LiveState::Error;
+                return;
+            }
         };
         if let Err(err) = self.ensure_live_runtime() {
             self.error_text = Some(err.to_string());
@@ -533,8 +543,9 @@ impl DictaiteApp {
     }
 
     fn request_tts(&mut self, intent: TtsIntent, text: String) {
-        let Some(client) = self.openai.clone() else {
-            self.error_text = Some("OpenAI client unavailable".to_string());
+        let resolved = resolve_api_key(&self.settings);
+        let Some(api_key) = resolved.as_str().map(str::to_string) else {
+            self.error_text = Some(AppError::MissingApiKey.to_string());
             return;
         };
         self.status_text = "Generating speech...".to_string();
@@ -543,6 +554,7 @@ impl DictaiteApp {
             TtsIntent::Preview { voice_id, .. } => voice_id.clone(),
         };
         self.tts_task = Some(BackgroundTask::spawn(move || {
+            let client = OpenAiClient::with_api_key(api_key)?;
             let audio = client.text_to_speech(&text, &voice_id)?;
             let clip = AudioClip::from_wav_bytes(audio)?;
             Ok(TtsOutcome { clip, intent })
@@ -753,11 +765,10 @@ impl App for DictaiteApp {
                         play_label = "■ Stop";
                     }
                 }
-                let tts_available =
-                    self.settings.backend != Backend::Local || self.openai.is_some();
+                let tts_available = resolve_api_key(&self.settings).as_str().is_some();
                 let play_response = ui
                     .add_enabled(tts_available, egui::Button::new(play_label))
-                    .on_disabled_hover_text("Text-to-speech requires an OpenAI API key");
+                    .on_disabled_hover_text(AppError::MissingApiKey.to_string());
                 if play_response.clicked() {
                     if let Some(player) = &mut self.player {
                         if player.is_playing() {
@@ -1002,6 +1013,8 @@ impl<T: Send + 'static> BackgroundTask<T> {
 
 struct SettingsModal {
     backend: Backend,
+    openai_api_key: String,
+    reveal_openai_api_key: bool,
     language_index: usize,
     translate_default: bool,
     target_index: usize,
@@ -1016,6 +1029,8 @@ impl SettingsModal {
     fn from(settings: &Settings) -> Self {
         Self {
             backend: settings.backend,
+            openai_api_key: settings.openai.api_key.clone().unwrap_or_default(),
+            reveal_openai_api_key: false,
             language_index: language_index(settings.default_language.as_deref()),
             translate_default: settings.translate_by_default,
             target_index: language_index(settings.default_target_language.as_deref()).max(1),
@@ -1050,6 +1065,30 @@ impl SettingsModal {
             let mut staged_settings = app.settings.clone();
             staged_settings.backend = self.backend;
             let translation_available = effective_translate(&staged_settings, true);
+
+            ui.separator();
+            ui.label("OpenAI API key");
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.openai_api_key)
+                        .password(!self.reveal_openai_api_key)
+                        .hint_text("Paste an OpenAI API key"),
+                );
+                ui.checkbox(&mut self.reveal_openai_api_key, "Reveal");
+            });
+            staged_settings.openai.api_key = normalized_staged_key(&self.openai_api_key);
+            let effective_key = resolve_api_key(&staged_settings);
+            ui.small(format!(
+                "Effective source: {}; stored value: {}",
+                api_key_source_label(effective_key.source()),
+                resolve_api_key_from(None, Some(&self.openai_api_key)).masked()
+            ));
+            if let Some(message) = environment_override_message(effective_key.source()) {
+                ui.small(message);
+            }
+            if let Some(message) = local_key_message(self.backend) {
+                ui.small(message);
+            }
 
             ui.separator();
             ui.label("Default language");
@@ -1223,6 +1262,7 @@ impl SettingsModal {
         }
         let mut settings = app.settings.clone();
         settings.backend = self.backend;
+        settings.openai.api_key = normalized_staged_key(&self.openai_api_key);
         settings.default_language = if self.language_index == 0 {
             None
         } else {
@@ -1243,12 +1283,39 @@ impl SettingsModal {
 
         if let Err(err) = save_settings(&settings) {
             app.error_text = Some(err.to_string());
-        } else {
-            app.error_text = None;
+            return;
         }
+        app.error_text = None;
         app.settings = settings;
         app.apply_settings_defaults();
+        app.maybe_warn_api_key();
     }
+}
+
+fn normalized_staged_key(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn api_key_source_label(source: ApiKeySource) -> &'static str {
+    match source {
+        ApiKeySource::Environment => "environment",
+        ApiKeySource::Settings => "settings",
+        ApiKeySource::Absent => "none",
+    }
+}
+
+fn environment_override_message(source: ApiKeySource) -> Option<&'static str> {
+    (source == ApiKeySource::Environment)
+        .then_some("OPENAI_API_KEY overrides the stored value. Unset it to use the Settings value.")
+}
+
+fn local_key_message(backend: Backend) -> Option<&'static str> {
+    (backend == Backend::Local).then_some("Local transcription does not require an OpenAI API key.")
+}
+
+fn should_warn_missing_key(settings: &Settings, key_present: bool) -> bool {
+    effective_live_backend(settings) == LiveBackend::OpenAi && !key_present
 }
 
 fn time_display(duration: Duration) -> String {
@@ -1300,4 +1367,74 @@ fn voice_label_for(voice_id: &str) -> String {
         .find(|voice| voice.id.eq_ignore_ascii_case(&id))
         .map(|voice| voice.label.to_string())
         .unwrap_or_else(|| voice_id.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_modal_stages_only_the_stored_key_and_starts_masked() {
+        let mut settings = Settings::default();
+        settings.openai.api_key = Some("stored-key".to_string());
+        let mut modal = SettingsModal::from(&settings);
+        assert_eq!(modal.openai_api_key, "stored-key");
+        assert!(!modal.reveal_openai_api_key);
+        modal.openai_api_key = "unsaved-key".to_string();
+        assert_eq!(settings.openai.api_key.as_deref(), Some("stored-key"));
+    }
+
+    #[test]
+    fn staged_key_clear_and_source_labels_are_deterministic() {
+        assert_eq!(
+            normalized_staged_key("  new-key  ").as_deref(),
+            Some("new-key")
+        );
+        assert_eq!(normalized_staged_key(" \t "), None);
+        assert_eq!(
+            api_key_source_label(ApiKeySource::Environment),
+            "environment"
+        );
+        assert_eq!(api_key_source_label(ApiKeySource::Settings), "settings");
+        assert_eq!(api_key_source_label(ApiKeySource::Absent), "none");
+        assert!(environment_override_message(ApiKeySource::Environment)
+            .unwrap()
+            .contains("overrides"));
+        assert!(environment_override_message(ApiKeySource::Settings).is_none());
+        assert!(local_key_message(Backend::Local)
+            .unwrap()
+            .contains("does not require"));
+        assert!(local_key_message(Backend::Openai).is_none());
+    }
+
+    #[test]
+    fn operation_key_is_recomputed_after_store_and_clear() {
+        let first = resolve_api_key_from(None, Some("new-key"));
+        assert_eq!(first.as_str(), Some("new-key"));
+        let cleared = resolve_api_key_from(None, None);
+        assert!(cleared.as_str().is_none());
+    }
+
+    #[test]
+    fn rust_runtime_has_no_environment_only_client_constructor() {
+        assert!(!include_str!("openai.rs").contains("fn from_env"));
+        assert!(!include_str!("main.rs").contains("OpenAiClient::from_env"));
+    }
+
+    #[test]
+    fn cloud_missing_key_warns_before_an_operation() {
+        let settings = Settings::default();
+        assert!(should_warn_missing_key(&settings, false));
+        assert!(!should_warn_missing_key(&settings, true));
+    }
+
+    #[cfg(feature = "local-whisper")]
+    #[test]
+    fn local_backend_never_warns_for_a_missing_openai_key() {
+        let settings = Settings {
+            backend: Backend::Local,
+            ..Settings::default()
+        };
+        assert!(!should_warn_missing_key(&settings, false));
+    }
 }

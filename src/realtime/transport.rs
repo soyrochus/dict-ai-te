@@ -5,7 +5,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::{HeaderValue, AUTHORIZATION};
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::error::AppError;
+use crate::error::{redact_secret, AppError};
 use crate::realtime::audio::{base64_pcm16, chunk_pcm16, pcm16_le, AudioSpec};
 use crate::realtime::events::{parse_event, RealtimeEvent};
 
@@ -23,11 +23,22 @@ pub const TRANSCRIPTION_MODEL: &str = "gpt-4o-transcribe";
 pub const TRANSLATION_URL: &str = "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 pub const TRANSLATION_MODEL: &str = "gpt-realtime";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RealtimeSessionConfig {
     pub api_key: String,
     pub source_language: Option<String>,
     pub target_language: Option<String>,
+}
+
+impl std::fmt::Debug for RealtimeSessionConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RealtimeSessionConfig")
+            .field("api_key", &"[REDACTED]")
+            .field("source_language", &self.source_language)
+            .field("target_language", &self.target_language)
+            .finish()
+    }
 }
 
 pub async fn run_live_transcription(
@@ -56,11 +67,11 @@ async fn run_verified_transcription_session(
 ) -> Result<(), AppError> {
     let mut request = TRANSCRIPTION_URL
         .into_client_request()
-        .map_err(|err| AppError::Message(err.to_string()))?;
+        .map_err(|err| transport_error("Realtime request creation failed", err, &config.api_key))?;
     request.headers_mut().insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
-            .map_err(|err| AppError::Message(err.to_string()))?,
+            .map_err(|err| transport_error("Invalid authorization value", err, &config.api_key))?,
     );
     let (socket, _) = tokio::time::timeout(
         CONNECTION_TIMEOUT,
@@ -68,7 +79,7 @@ async fn run_verified_transcription_session(
     )
     .await
     .map_err(|_| AppError::Message("Realtime connection timed out".to_string()))?
-    .map_err(|err| AppError::Message(format!("Realtime connection failed: {err}")))?;
+    .map_err(|err| realtime_connect_error("Realtime connection failed", err, &config.api_key))?;
     let (mut write, mut read) = socket.split();
 
     let mut session = json!({
@@ -99,7 +110,7 @@ async fn run_verified_transcription_session(
     write
         .send(Message::Text(session.to_string()))
         .await
-        .map_err(|err| AppError::Message(format!("Realtime session update failed: {err}")))?;
+        .map_err(|err| transport_error("Realtime session update failed", err, &config.api_key))?;
     let _ = event_tx
         .send(RealtimeEvent::SessionState {
             state: "connecting".to_string(),
@@ -119,7 +130,7 @@ async fn run_verified_transcription_session(
                         for chunk in encode_openai_frame(&frame) {
                             let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
                             write.send(Message::Text(message.to_string())).await
-                                .map_err(|err| AppError::Message(format!("Realtime audio send failed: {err}")))?;
+                                .map_err(|err| transport_error("Realtime audio send failed", err, &config.api_key))?;
                         }
                     }
                     None => {
@@ -131,13 +142,13 @@ async fn run_verified_transcription_session(
             }
             message = read.next() => {
                 let Some(message) = message else { break; };
-                let message = message.map_err(|err| AppError::Message(format!("Realtime receive failed: {err}")))?;
+                let message = message.map_err(|err| transport_error("Realtime receive failed", err, &config.api_key))?;
                 if message.is_close() {
                     break;
                 }
                 if let Ok(text) = message.to_text() {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
-                        let event = parse_event(&value);
+                        let event = redact_realtime_event(parse_event(&value), &config.api_key);
                         if matches!(event, RealtimeEvent::SessionState { .. } | RealtimeEvent::SourceDelta { .. } | RealtimeEvent::SourceCompleted { .. } | RealtimeEvent::Error { .. }) {
                             let _ = event_tx.send(event).await;
                         }
@@ -161,13 +172,17 @@ async fn run_verified_translation_session(
     event_tx: mpsc::Sender<RealtimeEvent>,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), AppError> {
-    let mut request = TRANSLATION_URL
-        .into_client_request()
-        .map_err(|err| AppError::Message(err.to_string()))?;
+    let mut request = TRANSLATION_URL.into_client_request().map_err(|err| {
+        transport_error(
+            "Realtime translation request creation failed",
+            err,
+            &config.api_key,
+        )
+    })?;
     request.headers_mut().insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
-            .map_err(|err| AppError::Message(err.to_string()))?,
+            .map_err(|err| transport_error("Invalid authorization value", err, &config.api_key))?,
     );
     let (socket, _) = tokio::time::timeout(
         CONNECTION_TIMEOUT,
@@ -175,7 +190,13 @@ async fn run_verified_translation_session(
     )
     .await
     .map_err(|_| AppError::Message("Realtime translation connection timed out".to_string()))?
-    .map_err(|err| AppError::Message(format!("Realtime translation connection failed: {err}")))?;
+    .map_err(|err| {
+        realtime_connect_error(
+            "Realtime translation connection failed",
+            err,
+            &config.api_key,
+        )
+    })?;
     let (mut write, mut read) = socket.split();
 
     let target = config
@@ -220,7 +241,11 @@ async fn run_verified_translation_session(
         .send(Message::Text(session.to_string()))
         .await
         .map_err(|err| {
-            AppError::Message(format!("Realtime translation session update failed: {err}"))
+            transport_error(
+                "Realtime translation session update failed",
+                err,
+                &config.api_key,
+            )
         })?;
     let _ = event_tx
         .send(RealtimeEvent::SessionState {
@@ -241,7 +266,7 @@ async fn run_verified_translation_session(
                         for chunk in encode_openai_frame(&frame) {
                             let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
                             write.send(Message::Text(message.to_string())).await
-                                .map_err(|err| AppError::Message(format!("Realtime translation audio send failed: {err}")))?;
+                                .map_err(|err| transport_error("Realtime translation audio send failed", err, &config.api_key))?;
                         }
                     }
                     None => {
@@ -253,13 +278,13 @@ async fn run_verified_translation_session(
             }
             message = read.next() => {
                 let Some(message) = message else { break; };
-                let message = message.map_err(|err| AppError::Message(format!("Realtime translation receive failed: {err}")))?;
+                let message = message.map_err(|err| transport_error("Realtime translation receive failed", err, &config.api_key))?;
                 if message.is_close() {
                     break;
                 }
                 if let Ok(text) = message.to_text() {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
-                        let event = parse_event(&value);
+                        let event = redact_realtime_event(parse_event(&value), &config.api_key);
                         if matches!(event, RealtimeEvent::SessionState { .. } | RealtimeEvent::SourceDelta { .. } | RealtimeEvent::SourceCompleted { .. } | RealtimeEvent::TranslationDelta { .. } | RealtimeEvent::TranslatedAudioDelta | RealtimeEvent::Error { .. }) {
                             let _ = event_tx.send(event).await;
                         }
@@ -286,6 +311,51 @@ fn encode_openai_frame(frame: &[f32]) -> Vec<String> {
         .collect()
 }
 
+fn realtime_connect_error(
+    context: &str,
+    error: tokio_tungstenite::tungstenite::Error,
+    api_key: &str,
+) -> AppError {
+    if matches!(
+        &error,
+        tokio_tungstenite::tungstenite::Error::Http(response)
+            if response.status() == tokio_tungstenite::tungstenite::http::StatusCode::UNAUTHORIZED
+    ) {
+        return AppError::RejectedApiKey;
+    }
+    AppError::Message(redact_secret(&format!("{context}: {error}"), api_key))
+}
+
+fn transport_error(context: &str, error: impl std::fmt::Display, api_key: &str) -> AppError {
+    AppError::Message(redact_secret(&format!("{context}: {error}"), api_key))
+}
+
+fn redact_realtime_event(event: RealtimeEvent, api_key: &str) -> RealtimeEvent {
+    match event {
+        RealtimeEvent::Error { message } => {
+            let lowercase = message.to_ascii_lowercase();
+            let rejected = lowercase.contains("api key")
+                && [
+                    "invalid",
+                    "incorrect",
+                    "unauthorized",
+                    "authentication",
+                    "rejected",
+                ]
+                .iter()
+                .any(|word| lowercase.contains(word));
+            RealtimeEvent::Error {
+                message: if rejected {
+                    AppError::RejectedApiKey.to_string()
+                } else {
+                    redact_secret(&message, api_key)
+                },
+            }
+        }
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
@@ -298,7 +368,12 @@ mod tests {
     #[ignore = "requires OPENAI_API_KEY and network access"]
     async fn live_transcription_session_accepts_audio() {
         dotenvy::dotenv().ok();
-        let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be configured");
+        let settings = crate::settings::load_settings();
+        let resolved = crate::settings::resolve_api_key(&settings);
+        let api_key = resolved
+            .as_str()
+            .expect("OPENAI_API_KEY or Settings key must be configured")
+            .to_string();
         let fixture_key = api_key.clone();
         let speech = tokio::task::spawn_blocking(move || {
             crate::openai::OpenAiClient::with_api_key(fixture_key)
@@ -387,5 +462,53 @@ mod tests {
         let samples = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
         let previous = base64_pcm16(&pcm16_le(&samples));
         assert_eq!(encode_openai_frame(&samples), vec![previous]);
+    }
+
+    #[test]
+    fn realtime_unauthorized_is_distinct_and_config_debug_is_redacted() {
+        let secret = "sk-sentinel-websocket";
+        let response = tokio_tungstenite::tungstenite::http::Response::builder()
+            .status(tokio_tungstenite::tungstenite::http::StatusCode::UNAUTHORIZED)
+            .body(None)
+            .unwrap();
+        let error = realtime_connect_error(
+            "Realtime connection failed",
+            tokio_tungstenite::tungstenite::Error::Http(response),
+            secret,
+        );
+        assert!(matches!(error, AppError::RejectedApiKey));
+
+        let config = RealtimeSessionConfig {
+            api_key: secret.to_string(),
+            source_language: None,
+            target_language: None,
+        };
+        assert!(!format!("{config:?}").contains(secret));
+    }
+
+    #[test]
+    fn realtime_server_error_messages_are_redacted() {
+        let secret = "sk-sentinel-websocket";
+        let event = redact_realtime_event(
+            RealtimeEvent::Error {
+                message: format!("rejected Bearer {secret}"),
+            },
+            secret,
+        );
+        let RealtimeEvent::Error { message } = event else {
+            panic!("expected error event");
+        };
+        assert!(!message.contains(secret));
+
+        let rejected = redact_realtime_event(
+            RealtimeEvent::Error {
+                message: "Incorrect API key provided".to_string(),
+            },
+            secret,
+        );
+        let RealtimeEvent::Error { message } = rejected else {
+            panic!("expected error event");
+        };
+        assert_eq!(message, AppError::RejectedApiKey.to_string());
     }
 }

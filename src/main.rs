@@ -8,7 +8,6 @@ mod realtime;
 mod settings;
 
 use app::DictaiteApp;
-use openai::OpenAiClient;
 use std::path::Path;
 
 fn configure_fonts(ctx: &egui::Context) {
@@ -118,14 +117,6 @@ fn main() -> eframe::Result<()> {
     dotenvy::dotenv().ok();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
 
-    let openai_client = match OpenAiClient::from_env() {
-        Ok(client) => Some(client),
-        Err(err) => {
-            log::warn!("OpenAI client unavailable: {err}");
-            None
-        }
-    };
-
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             // Reduce initial height to two-thirds of previous (780 -> 520)
@@ -144,8 +135,7 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             // Ensure fonts cover non-Latin scripts used in language names
             configure_fonts(&cc.egui_ctx);
-            let client = openai_client.clone();
-            Ok(Box::new(DictaiteApp::new(client)))
+            Ok(Box::new(DictaiteApp::new()))
         }),
     )
 }

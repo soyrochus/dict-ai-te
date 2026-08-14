@@ -1,4 +1,3 @@
-use std::env;
 use std::io::Cursor;
 
 use anyhow::{Context, Result};
@@ -8,7 +7,7 @@ use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use rodio::{Decoder as RodioDecoder, Source};
 use serde_json::Value;
 
-use crate::error::AppError;
+use crate::error::{redact_secret, AppError};
 
 const BASE_URL: &str = "https://api.openai.com/v1";
 const TTS_MODEL: &str = "tts-1";
@@ -21,15 +20,9 @@ pub struct OpenAiClient {
 }
 
 impl OpenAiClient {
-    pub fn from_env() -> Result<Self, AppError> {
-        dotenvy::dotenv().ok();
-        let api_key = env::var("OPENAI_API_KEY").map_err(|_| AppError::MissingApiKey)?;
-        Self::with_api_key(api_key)
-    }
-
     pub fn with_api_key(api_key: impl Into<String>) -> Result<Self, AppError> {
-        let api_key = api_key.into();
-        if api_key.trim().is_empty() {
+        let api_key = api_key.into().trim().to_string();
+        if api_key.is_empty() {
             return Err(AppError::MissingApiKey);
         }
         let http = Client::builder()
@@ -84,7 +77,7 @@ impl OpenAiClient {
             let body = response
                 .text()
                 .unwrap_or_else(|_| "Unable to decode error response".to_string());
-            return Err(AppError::Tts(format!("{status}: {body}")));
+            return Err(classify_tts_error(status, &body, &self.api_key));
         }
 
         let is_json = response
@@ -107,6 +100,14 @@ impl OpenAiClient {
                 .context("Failed reading TTS response body")
                 .map_err(AppError::from)
         }
+    }
+}
+
+fn classify_tts_error(status: reqwest::StatusCode, body: &str, api_key: &str) -> AppError {
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        AppError::RejectedApiKey
+    } else {
+        AppError::Tts(redact_secret(&format!("{status}: {body}"), api_key))
     }
 }
 
@@ -356,4 +357,37 @@ fn encode_pcm_to_wav(
             .map_err(AppError::from)?;
     }
     Ok(cursor.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_unauthorized_is_a_rejected_key_without_secret_material() {
+        let secret = "sk-sentinel-http";
+        let error = classify_tts_error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            &format!("rejected {secret}"),
+            secret,
+        );
+        assert!(matches!(error, AppError::RejectedApiKey));
+        assert!(!error.to_string().contains(secret));
+
+        let mut settings = crate::settings::Settings::default();
+        settings.openai.api_key = Some(secret.to_string());
+        let _ = classify_tts_error(reqwest::StatusCode::UNAUTHORIZED, "rejected", secret);
+        assert_eq!(settings.openai.api_key.as_deref(), Some(secret));
+    }
+
+    #[test]
+    fn non_auth_http_errors_are_redacted() {
+        let secret = "sk-sentinel-http";
+        let error = classify_tts_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            &format!("bad request containing {secret}"),
+            secret,
+        );
+        assert!(!error.to_string().contains(secret));
+    }
 }

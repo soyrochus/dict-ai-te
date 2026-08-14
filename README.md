@@ -18,8 +18,9 @@
 >
 > They are OpenAI-only: on-device transcription exists solely in the Rust app. They also drop
 > unknown keys when they save `~/.dictaite/settings.json`, so launching a Python variant after
-> configuring the Rust app can silently discard the newer settings (`backend`, `local`). If you use
-> on-device mode, do not run the Python apps against the same settings file.
+> configuring the Rust app can silently discard newer settings (`backend`, `local`, `openai`). If
+> you use local mode or store a key in the Rust app, do not run the Python apps against the same
+> settings file.
 
 All three read the same settings file (`~/.dictaite/settings.json`).
 
@@ -66,11 +67,29 @@ cd dict-ai-te
 
 ### 2. Set your API key
 
+The Rust app resolves credentials for each cloud operation in this order:
+
+1. A non-blank `OPENAI_API_KEY` from the process environment (including a `.env` loaded from the
+   launch directory).
+2. The key entered under **Settings → OpenAI API key**.
+3. No key. Cloud transcription, translation, voice previews, and transcript playback then show
+   guidance for configuring one.
+
+An environment key always overrides the stored value; Settings shows which source is active.
+Because `.env` is resolved relative to the launch directory, it may not be found when the binary is
+started from Finder, a desktop launcher, or another directory. The in-app setting is the fallback
+for those launches and takes effect on the next operation without restarting.
+
 ```bash
 export OPENAI_API_KEY=your_key_here
 # or create a .env file:
 echo "OPENAI_API_KEY=your_key_here" > .env
 ```
+
+The in-app key is stored as plaintext in `~/.dictaite/settings.json`. On Unix, any settings save
+that contains a key is atomically installed with permissions `0600`. Local transcription does not
+need an OpenAI key and makes no OpenAI speech-related request; playback and voice previews still use
+OpenAI TTS.
 
 ### 3. Run
 
@@ -295,18 +314,55 @@ The Flask interface mirrors the GTK and Rust layout using TailwindCSS and vanill
 
 ## Configuration
 
-Settings are stored in `~/.dictaite/settings.json`. You can also override the config directory with the `DICTAITE_HOME` environment variable.
+The Rust app stores settings in `~/.dictaite/settings.json`. Set `DICTAITE_HOME` to an absolute
+directory to use `<DICTAITE_HOME>/settings.json` instead. Missing fields use the defaults below, and
+the Rust app preserves unknown fields when saving.
+
+Copy the complete example into the default location with:
+
+```bash
+mkdir -p "$HOME/.dictaite"
+cp settings.example.json "$HOME/.dictaite/settings.json"
+chmod 600 "$HOME/.dictaite/settings.json"
+```
+
+See [`settings.example.json`](settings.example.json) for a ready-to-copy, non-secret configuration.
+Leave `openai.api_key` as `null` when using `OPENAI_API_KEY`, or replace it with a key entered
+manually. An environment key always takes precedence and is never copied into this file.
+
+### Settings options
+
+| JSON field | Type and default | Accepted values / behavior |
+| --- | --- | --- |
+| `default_language` | string or `null`; `null` | Source-language code. `null` or `"default"` enables automatic detection. Supported codes: `en`, `zh`, `es`, `de`, `fr`, `ja`, `pt`, `ru`, `ar`, `it`, `ko`, `hi`, `nl`, `tr`, `pl`, `id`, `th`, `sv`, `he`, `cs`. |
+| `translate_by_default` | boolean; `false` | Enables translation when cloud mode starts. Local transcription always disables translation. |
+| `default_target_language` | string or `null`; `"en"` | Translation target language code, using the same codes listed above. A blank value is restored to `"en"`. |
+| `female_voice` | string; `"nova"` | Preferred female-group TTS voice: `nova`, `alloy`, `verse`, or `sol`. |
+| `male_voice` | string; `"onyx"` | Preferred male-group TTS voice: `onyx`, `sage`, `echo`, or `ember`. |
+| `backend` | string; `"openai"` | `"openai"` for OpenAI Realtime or `"local"` for on-device Whisper. Local support must be compiled in. |
+| `openai.api_key` | string or `null`; `null` | Stored OpenAI key fallback. Blank values are treated as absent. Stored plaintext; key-bearing saves use mode `0600` on Unix. |
+| `local.engine` | string; `"whisper"` | Local transcription engine. Currently only `"whisper"` is supported. |
+| `local.model` | string; `"base.en"` | Managed model ID: `"base.en"` (English) or `"small"` (multilingual). |
+| `local.model_path` | path string or `null`; `null` | Absolute or relative path to a custom whisper.cpp GGML model. When set, it overrides the managed model path. |
+| `local.device` | string; `"auto"` | `"auto"`, `"cpu"`, `"metal"`, or `"cuda"`. Unsupported accelerators fall back to CPU. |
+
+### Configuration environment variables
+
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Highest-priority OpenAI credential. It may also be loaded from a `.env` found at launch. |
+| `DICTAITE_HOME` | Absolute application-data directory override; changes both `settings.json` and managed-model locations. |
 
 The Rust app preserves keys it does not recognise when it saves. The deprecated Python variants do
-not: running them against the same file discards the newer `backend` and `local` settings.
+not: running them against the same file discards the newer `backend`, `local`, and `openai` settings.
 
 Legacy TOML configs at `~/.config/dict-ai-te/dict-ai-te_config.toml` are migrated automatically on first launch.
 
 An OpenAI API key is required for the remote backend, translation, and TTS. It is not required for
-local transcription. It can be set via:
+local transcription. It can be supplied through:
 
-- A `.env` file in the project root: `OPENAI_API_KEY=your_key_here`
-- The environment variable `OPENAI_API_KEY`
+- The environment variable `OPENAI_API_KEY` (including a `.env` loaded at launch)
+- The `openai.api_key` setting when no non-blank environment value exists
 
 ---
 
