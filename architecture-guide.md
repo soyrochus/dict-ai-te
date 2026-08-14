@@ -228,7 +228,9 @@ force-cut at 15 seconds. Segment IDs are monotonic (`local-0`, `local-1`, …).
 Known models come from an embedded manifest. Downloads run in a `poll-promise` worker, write a
 `.part` file, verify SHA-256, and atomically rename. A custom `local.model_path` bypasses the
 manifest. The `local-whisper`, `metal`, and `cuda` Cargo features keep all native dependencies out
-of the default build.
+of the default build. Metal forwarding is restricted to macOS at dependency resolution time, so
+enabling the feature on another target produces a CPU build instead of asking CMake for Apple
+frameworks.
 
 ### 5.1 Transcription session
 

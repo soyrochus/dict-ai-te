@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = []
 local-whisper = ["dep:whisper-rs", "dep:silero"]
-metal = ["local-whisper", "whisper-rs/metal"]
+metal = ["local-whisper"]
 cuda = ["local-whisper", "whisper-rs/cuda"]
 test-local-engine = []
 
@@ -38,5 +38,12 @@ tokio = { version = "1.37", features = ["rt-multi-thread", "sync", "macros", "ti
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 rubato = "0.15"
-whisper-rs = { version = "0.16", optional = true }
 silero = { version = "0.6", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Cargo features cannot conditionally forward another crate's feature. Declaring
+# the dependency by target keeps whisper.cpp's Metal backend macOS-only.
+whisper-rs = { version = "0.16", optional = true, features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = { version = "0.16", optional = true }

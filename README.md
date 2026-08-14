@@ -176,10 +176,10 @@ CMake, then build with the feature appropriate for the machine:
 # CPU
 cargo run --release --features local-whisper
 
-# Apple Metal
+# Apple Metal (macOS only; other platforms fall back to CPU)
 cargo run --release --features metal
 
-# NVIDIA CUDA
+# NVIDIA CUDA (requires the CUDA toolkit)
 cargo run --release --features cuda
 ```
 
