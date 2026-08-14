@@ -10,6 +10,10 @@ pub enum RealtimeEvent {
         item_id: Option<String>,
         text: String,
     },
+    SourceUpdate {
+        item_id: Option<String>,
+        text: String,
+    },
     TranslationDelta {
         text: String,
     },

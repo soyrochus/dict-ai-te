@@ -1,6 +1,31 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 
 pub const TARGET_SAMPLE_RATE: u32 = 24_000;
+pub const OPENAI_FRAME_SAMPLES: usize = 960;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudioSpec {
+    pub sample_rate: u32,
+    pub frame_samples: usize,
+}
+
+impl AudioSpec {
+    pub const fn openai() -> Self {
+        Self {
+            sample_rate: TARGET_SAMPLE_RATE,
+            frame_samples: OPENAI_FRAME_SAMPLES,
+        }
+    }
+
+    /// Whisper/Silero operate on exact 512-sample frames at 16 kHz.
+    #[cfg_attr(not(feature = "local-whisper"), allow(dead_code))]
+    pub const fn local_whisper() -> Self {
+        Self {
+            sample_rate: 16_000,
+            frame_samples: 512,
+        }
+    }
+}
 
 pub fn downmix_to_mono(samples: &[f32], channels: u16) -> Vec<f32> {
     if channels <= 1 {

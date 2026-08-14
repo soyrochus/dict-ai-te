@@ -3,6 +3,13 @@ name = "dict_ai_te"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+local-whisper = ["dep:whisper-rs", "dep:silero"]
+metal = ["local-whisper", "whisper-rs/metal"]
+cuda = ["local-whisper", "whisper-rs/cuda"]
+test-local-engine = []
+
 [dependencies]
 anyhow = "1.0"
 arboard = "3.3"
@@ -24,9 +31,12 @@ rodio = "0.17"
 rfd = "0.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 thiserror = "1.0"
 toml = "0.8"
-tokio = { version = "1.37", features = ["rt-multi-thread", "sync", "macros"] }
+tokio = { version = "1.37", features = ["rt-multi-thread", "sync", "macros", "time"] }
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 rubato = "0.15"
+whisper-rs = { version = "0.16", optional = true }
+silero = { version = "0.6", optional = true }

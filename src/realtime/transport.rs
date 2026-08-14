@@ -6,7 +6,10 @@ use tokio_tungstenite::tungstenite::http::header::{HeaderValue, AUTHORIZATION};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::error::AppError;
+use crate::realtime::audio::{base64_pcm16, chunk_pcm16, pcm16_le, AudioSpec};
 use crate::realtime::events::{parse_event, RealtimeEvent};
+
+const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 // Verified against OpenAI Realtime GA docs on 2026-05-16:
 // - WebSocket transcription sessions use the realtime endpoint with intent=transcription.
@@ -29,7 +32,7 @@ pub struct RealtimeSessionConfig {
 
 pub async fn run_live_transcription(
     config: RealtimeSessionConfig,
-    audio_rx: mpsc::Receiver<String>,
+    audio_rx: mpsc::Receiver<Vec<f32>>,
     event_tx: mpsc::Sender<RealtimeEvent>,
     stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), AppError> {
@@ -38,7 +41,7 @@ pub async fn run_live_transcription(
 
 pub async fn run_live_translation(
     config: RealtimeSessionConfig,
-    audio_rx: mpsc::Receiver<String>,
+    audio_rx: mpsc::Receiver<Vec<f32>>,
     event_tx: mpsc::Sender<RealtimeEvent>,
     stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), AppError> {
@@ -47,7 +50,7 @@ pub async fn run_live_translation(
 
 async fn run_verified_transcription_session(
     config: RealtimeSessionConfig,
-    mut audio_rx: mpsc::Receiver<String>,
+    mut audio_rx: mpsc::Receiver<Vec<f32>>,
     event_tx: mpsc::Sender<RealtimeEvent>,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), AppError> {
@@ -59,9 +62,13 @@ async fn run_verified_transcription_session(
         HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
             .map_err(|err| AppError::Message(err.to_string()))?,
     );
-    let (socket, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .map_err(|err| AppError::Message(format!("Realtime connection failed: {err}")))?;
+    let (socket, _) = tokio::time::timeout(
+        CONNECTION_TIMEOUT,
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
+    .map_err(|_| AppError::Message("Realtime connection timed out".to_string()))?
+    .map_err(|err| AppError::Message(format!("Realtime connection failed: {err}")))?;
     let (mut write, mut read) = socket.split();
 
     let mut session = json!({
@@ -108,10 +115,12 @@ async fn run_verified_transcription_session(
             }
             chunk = audio_rx.recv() => {
                 match chunk {
-                    Some(chunk) => {
-                        let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
-                        write.send(Message::Text(message.to_string())).await
-                            .map_err(|err| AppError::Message(format!("Realtime audio send failed: {err}")))?;
+                    Some(frame) => {
+                        for chunk in encode_openai_frame(&frame) {
+                            let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
+                            write.send(Message::Text(message.to_string())).await
+                                .map_err(|err| AppError::Message(format!("Realtime audio send failed: {err}")))?;
+                        }
                     }
                     None => {
                         let _ = write.send(Message::Text(json!({"type": "input_audio_buffer.commit"}).to_string())).await;
@@ -148,7 +157,7 @@ async fn run_verified_transcription_session(
 
 async fn run_verified_translation_session(
     config: RealtimeSessionConfig,
-    mut audio_rx: mpsc::Receiver<String>,
+    mut audio_rx: mpsc::Receiver<Vec<f32>>,
     event_tx: mpsc::Sender<RealtimeEvent>,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), AppError> {
@@ -160,11 +169,13 @@ async fn run_verified_translation_session(
         HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
             .map_err(|err| AppError::Message(err.to_string()))?,
     );
-    let (socket, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .map_err(|err| {
-            AppError::Message(format!("Realtime translation connection failed: {err}"))
-        })?;
+    let (socket, _) = tokio::time::timeout(
+        CONNECTION_TIMEOUT,
+        tokio_tungstenite::connect_async(request),
+    )
+    .await
+    .map_err(|_| AppError::Message("Realtime translation connection timed out".to_string()))?
+    .map_err(|err| AppError::Message(format!("Realtime translation connection failed: {err}")))?;
     let (mut write, mut read) = socket.split();
 
     let target = config
@@ -226,10 +237,12 @@ async fn run_verified_translation_session(
             }
             chunk = audio_rx.recv() => {
                 match chunk {
-                    Some(chunk) => {
-                        let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
-                        write.send(Message::Text(message.to_string())).await
-                            .map_err(|err| AppError::Message(format!("Realtime translation audio send failed: {err}")))?;
+                    Some(frame) => {
+                        for chunk in encode_openai_frame(&frame) {
+                            let message = json!({"type": "input_audio_buffer.append", "audio": chunk});
+                            write.send(Message::Text(message.to_string())).await
+                                .map_err(|err| AppError::Message(format!("Realtime translation audio send failed: {err}")))?;
+                        }
                     }
                     None => {
                         let _ = write.send(Message::Text(json!({"type": "input_audio_buffer.commit"}).to_string())).await;
@@ -264,9 +277,91 @@ async fn run_verified_translation_session(
     Ok(())
 }
 
+fn encode_openai_frame(frame: &[f32]) -> Vec<String> {
+    let spec = AudioSpec::openai();
+    let pcm = pcm16_le(frame);
+    chunk_pcm16(&pcm, spec.sample_rate, 40)
+        .iter()
+        .map(|chunk| base64_pcm16(chunk))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use rodio::Source;
+
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires OPENAI_API_KEY and network access"]
+    async fn live_transcription_session_accepts_audio() {
+        dotenvy::dotenv().ok();
+        let api_key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY must be configured");
+        let fixture_key = api_key.clone();
+        let speech = tokio::task::spawn_blocking(move || {
+            crate::openai::OpenAiClient::with_api_key(fixture_key)
+                .unwrap()
+                .text_to_speech("the quick brown fox jumps over the lazy dog", "alloy")
+                .unwrap()
+        })
+        .await
+        .unwrap();
+        let decoder = rodio::Decoder::new(Cursor::new(speech)).unwrap();
+        let source_rate = decoder.sample_rate();
+        let channels = decoder.channels();
+        let samples = decoder.convert_samples::<f32>().collect::<Vec<_>>();
+        let mono = crate::realtime::audio::downmix_to_mono(&samples, channels);
+        let mut audio = crate::realtime::audio::resample_linear(
+            &mono,
+            source_rate,
+            AudioSpec::openai().sample_rate,
+        );
+        audio.extend(vec![0.0; AudioSpec::openai().sample_rate as usize]);
+
+        let (audio_tx, audio_rx) = mpsc::channel(64);
+        let (event_tx, mut event_rx) = mpsc::channel(64);
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let session = tokio::spawn(run_live_transcription(
+            RealtimeSessionConfig {
+                api_key,
+                source_language: Some("en".to_string()),
+                target_language: None,
+            },
+            audio_rx,
+            event_tx,
+            stop_rx,
+        ));
+
+        for frame in audio.chunks(AudioSpec::openai().frame_samples) {
+            let mut frame = frame.to_vec();
+            frame.resize(AudioSpec::openai().frame_samples, 0.0);
+            audio_tx.send(frame).await.unwrap();
+        }
+
+        let transcript = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+            loop {
+                match event_rx.recv().await {
+                    Some(RealtimeEvent::SourceCompleted { text, .. }) => break text,
+                    Some(RealtimeEvent::Error { message }) => {
+                        panic!("Realtime API rejected the session: {message}")
+                    }
+                    Some(_) => {}
+                    None => panic!("Realtime task closed its event channel"),
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for a completed transcript");
+        assert!(
+            transcript.to_ascii_lowercase().contains("quick brown fox"),
+            "unexpected transcript: {transcript}"
+        );
+
+        let _ = stop_tx.send(());
+        session.await.unwrap().unwrap();
+    }
 
     #[test]
     fn uses_ga_transcription_endpoint_without_beta_query() {
@@ -285,5 +380,12 @@ mod tests {
         );
         assert!(!TRANSLATION_URL.contains("translations"));
         assert!(!TRANSLATION_URL.contains("beta"));
+    }
+
+    #[test]
+    fn openai_encoding_is_byte_identical_to_capture_worker_format() {
+        let samples = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
+        let previous = base64_pcm16(&pcm16_le(&samples));
+        assert_eq!(encode_openai_frame(&samples), vec![previous]);
     }
 }

@@ -2,6 +2,7 @@ mod app;
 mod audio;
 mod constants;
 mod error;
+mod local;
 mod openai;
 mod realtime;
 mod settings;

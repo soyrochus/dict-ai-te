@@ -31,6 +31,23 @@ impl TranscriptAssembler {
         }
     }
 
+    pub fn update(&mut self, item_id: Option<&str>, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let Some(item_id) = item_id else {
+            self.anonymous.push(text.to_string());
+            return;
+        };
+        if !self.segments.contains_key(item_id) {
+            self.order.push(item_id.to_string());
+        }
+        let segment = self.segments.entry(item_id.to_string()).or_default();
+        if !segment.final_text {
+            segment.text = text.to_string();
+        }
+    }
+
     pub fn complete(&mut self, item_id: Option<&str>, text: &str) {
         if text.is_empty() {
             return;
@@ -87,5 +104,40 @@ mod tests {
         assembler.complete(Some("item-1"), "hello");
         assembler.complete(Some("item-2"), "world");
         assert_eq!(assembler.text(), "world hello loose");
+    }
+
+    #[test]
+    fn updates_replace_and_reflect_revisions() {
+        let mut assembler = TranscriptAssembler::default();
+        assembler.update(Some("local-0"), "recognise beach");
+        assembler.update(Some("local-0"), "recognise speech");
+        assert_eq!(assembler.text(), "recognise speech");
+    }
+
+    #[test]
+    fn completed_segments_ignore_late_updates_and_deltas() {
+        let mut assembler = TranscriptAssembler::default();
+        assembler.update(Some("local-0"), "the quick brow");
+        assembler.complete(Some("local-0"), "the quick brown fox");
+        assembler.update(Some("local-0"), "stale");
+        assembler.add_delta(Some("local-0"), " stale delta");
+        assert_eq!(assembler.text(), "the quick brown fox");
+    }
+
+    #[test]
+    fn mixed_operations_preserve_first_seen_order() {
+        let mut assembler = TranscriptAssembler::default();
+        assembler.update(Some("local-0"), "first draft");
+        assembler.update(Some("local-1"), "second");
+        assembler.complete(Some("local-0"), "first");
+        assert_eq!(assembler.text(), "first second");
+    }
+
+    #[test]
+    fn source_delta_append_semantics_are_unchanged() {
+        let mut assembler = TranscriptAssembler::default();
+        assembler.add_delta(Some("remote-0"), "Hel");
+        assembler.add_delta(Some("remote-0"), "lo");
+        assert_eq!(assembler.text(), "Hello");
     }
 }

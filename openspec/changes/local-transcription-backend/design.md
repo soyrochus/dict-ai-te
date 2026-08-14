@@ -69,6 +69,8 @@ The cost of the chosen option is three files in one language (`events.rs`, `tran
 
 VAD opens a segment on speech onset; the open segment is re-decoded every 500 ms to emit `SourceUpdate`; sustained silence of 600 ms triggers a final decode and `SourceCompleted`; a segment reaching 15 s is force-cut and a new one opened immediately. A partial decode is skipped, never queued, if the previous one is still running.
 
+Segments shorter than four 512-sample speech frames (128 ms) are discarded before decode. This satisfies whisper.cpp's 100 ms minimum input requirement and prevents isolated VAD spikes from producing hallucinated transcripts. Language capability is read from the loaded model: an English-only model always decodes as English, including when the Origin selector is set to auto-detect; multilingual models retain the configured hint or auto-detection.
+
 The force-cut exists because re-decoding a growing window is quadratic in segment length; without a bound, a speaker who does not pause degrades until the machine cannot keep up. Skipping rather than queueing overlapping decodes has the same purpose: the system sheds load instead of accumulating a backlog it can never drain. The 600 ms silence threshold is chosen to sit near the remote path's `silence_duration_ms: 500` so the two backends feel similar. All four values are tunable defaults expected to be adjusted against real speech.
 
 ### No tokio runtime on the local path
@@ -82,6 +84,14 @@ The audio channel remains `tokio::sync::mpsc` — its channels are runtime-indep
 ### Model management reuses existing dependencies
 
 `reqwest` (download), `rfd` (file picker), and `poll-promise` (background task with UI polling) are already dependencies, so in-app download with progress adds no crates. Downloads write `.part`, verify SHA-256 from the embedded manifest, then rename atomically — an interrupted download must never leave a file that looks like a valid model, because a truncated model produces confusing engine-level load errors rather than an obvious "not downloaded" state.
+
+### Silero VAD uses the feature-gated `silero` crate
+
+The local feature uses `silero` 0.6 with its bundled ONNX model. Its streaming API consumes the
+required 512-sample frames at 16 kHz directly and maintains recurrent state between frames. This
+was selected over a home-grown energy detector (insufficient robustness) and over maintaining our
+own ONNX graph/session code. The ONNX Runtime weight is accepted because the entire dependency is
+confined behind `local-whisper`; the default build remains free of it.
 
 ### One language setting, not two
 

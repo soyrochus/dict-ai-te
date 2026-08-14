@@ -85,7 +85,7 @@ impl AudioClip {
         let samples: Vec<f32> = decoder.convert_samples::<f32>().collect();
         Ok(Self {
             sample_rate,
-            channels: channels as u16,
+            channels,
             samples,
             wav_bytes: Some(Arc::new(bytes)),
         })

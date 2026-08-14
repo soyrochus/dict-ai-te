@@ -1,12 +1,42 @@
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 const SETTINGS_FILENAME: &str = "settings.json";
 const LEGACY_FILENAME: &str = "dict-ai-te_config.toml";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    Openai,
+    Local,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LocalSettings {
+    pub engine: String,
+    pub model: String,
+    pub model_path: Option<PathBuf>,
+    pub device: String,
+}
+
+impl Default for LocalSettings {
+    fn default() -> Self {
+        Self {
+            engine: "whisper".to_string(),
+            model: "base.en".to_string(),
+            model_path: None,
+            device: "auto".to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -18,6 +48,10 @@ pub struct Settings {
     pub default_target_language: Option<String>,
     pub female_voice: String,
     pub male_voice: String,
+    pub backend: Backend,
+    pub local: LocalSettings,
+    #[serde(flatten)]
+    pub unknown: BTreeMap<String, Value>,
 }
 
 impl Default for Settings {
@@ -28,8 +62,15 @@ impl Default for Settings {
             default_target_language: Some("en".to_string()),
             female_voice: "nova".to_string(),
             male_voice: "onyx".to_string(),
+            backend: Backend::Openai,
+            local: LocalSettings::default(),
+            unknown: BTreeMap::new(),
         }
     }
+}
+
+pub fn effective_translate(settings: &Settings, requested: bool) -> bool {
+    settings.backend != Backend::Local && requested
 }
 
 fn deserialize_optional_lang<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -186,4 +227,80 @@ fn fill_defaults(mut settings: Settings) -> Settings {
         }
     }
     settings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn legacy_json_defaults_to_openai_and_local_defaults() {
+        let settings: Settings = serde_json::from_value(json!({
+            "default_language": "es",
+            "translate_by_default": true,
+            "female_voice": "nova",
+            "male_voice": "onyx"
+        }))
+        .unwrap();
+        assert_eq!(settings.backend, Backend::Openai);
+        assert_eq!(settings.local, LocalSettings::default());
+        assert!(settings.translate_by_default);
+    }
+
+    #[test]
+    fn backend_local_and_unknown_keys_round_trip() {
+        let settings: Settings = serde_json::from_value(json!({
+            "backend": "local",
+            "local": {
+                "engine": "whisper",
+                "model": "small",
+                "model_path": "/tmp/custom.bin",
+                "device": "cpu"
+            },
+            "future_option": {"enabled": true}
+        }))
+        .unwrap();
+        assert_eq!(settings.backend, Backend::Local);
+        assert_eq!(settings.local.model, "small");
+        let encoded = serde_json::to_value(&settings).unwrap();
+        assert_eq!(encoded["future_option"], json!({"enabled": true}));
+    }
+
+    #[test]
+    fn effective_translate_forces_local_without_mutating_preference() {
+        let mut settings = Settings {
+            translate_by_default: true,
+            backend: Backend::Local,
+            ..Settings::default()
+        };
+        assert!(!effective_translate(
+            &settings,
+            settings.translate_by_default
+        ));
+        assert!(settings.translate_by_default);
+        settings.backend = Backend::Openai;
+        assert!(effective_translate(
+            &settings,
+            settings.translate_by_default
+        ));
+    }
+
+    #[test]
+    fn backend_selection_survives_save_and_reload() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = env::temp_dir().join(format!("dictaite-settings-{unique}.json"));
+        let settings = Settings {
+            backend: Backend::Local,
+            ..Settings::default()
+        };
+        save_settings_to_path(&settings, &path).unwrap();
+        let loaded = load_settings_from_path(Some(&path)).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(loaded.backend, Backend::Local);
+    }
 }

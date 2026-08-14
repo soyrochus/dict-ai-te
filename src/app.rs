@@ -9,14 +9,23 @@ use egui::{self, Align, Color32, Context, Frame, Layout, RichText, Ui, Vec2};
 use crate::audio::{AudioClip, AudioPlayer, LiveCapture};
 use crate::constants::{FEMALE_VOICES, LANGUAGES, MALE_VOICES, VOICE_SAMPLE_TEXT};
 use crate::error::AppError;
+use crate::local::model::{
+    availability as model_availability, manifest_entry, model_path, resolve_model_path,
+    ModelAvailability, ModelDownload, ModelManifestEntry, MODEL_MANIFEST,
+};
+use crate::local::{
+    effective_live_backend, start_local_session, LiveBackend, LocalEngine, LocalSession,
+    LocalSessionConfig, LOCAL_BACKEND_AVAILABLE,
+};
 use crate::openai::OpenAiClient;
+use crate::realtime::audio::AudioSpec;
 use crate::realtime::events::RealtimeEvent;
 use crate::realtime::state::LiveState;
 use crate::realtime::transcript::TranscriptAssembler;
 use crate::realtime::transport::{
     run_live_transcription, run_live_translation, RealtimeSessionConfig,
 };
-use crate::settings::{load_settings, save_settings, Settings};
+use crate::settings::{effective_translate, load_settings, save_settings, Backend, Settings};
 
 pub struct DictaiteApp {
     live_capture: Option<LiveCapture>,
@@ -24,6 +33,8 @@ pub struct DictaiteApp {
     live_event_tx: mpsc::Sender<RealtimeEvent>,
     live_event_rx: mpsc::Receiver<RealtimeEvent>,
     live_stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    local_session: Option<LocalSession>,
+    active_backend: LiveBackend,
     live_state: LiveState,
     is_recording: bool,
     record_started_at: Option<Instant>,
@@ -50,6 +61,8 @@ pub struct DictaiteApp {
     tts_voice_id: Option<String>,
 
     tts_task: Option<BackgroundTask<TtsOutcome>>,
+    model_download: Option<ModelDownload>,
+    model_download_entry: Option<ModelManifestEntry>,
 
     status_text: String,
     error_text: Option<String>,
@@ -69,24 +82,14 @@ impl DictaiteApp {
         };
 
         let (live_event_tx, live_event_rx) = mpsc::channel();
-        let live_runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("dictaite-realtime")
-            .build()
-        {
-            Ok(runtime) => Some(runtime),
-            Err(err) => {
-                log::error!("Failed to initialise realtime runtime: {err}");
-                None
-            }
-        };
-
         let mut app = Self {
             live_capture: None,
-            live_runtime,
+            live_runtime: None,
             live_event_tx,
             live_event_rx,
             live_stop_tx: None,
+            local_session: None,
+            active_backend: LiveBackend::OpenAi,
             live_state: LiveState::Disconnected,
             is_recording: false,
             record_started_at: None,
@@ -107,6 +110,8 @@ impl DictaiteApp {
             tts_clip: None,
             tts_voice_id: None,
             tts_task: None,
+            model_download: None,
+            model_download_entry: None,
             status_text: "Press to start listening".to_string(),
             error_text: None,
             copy_feedback_until: None,
@@ -118,13 +123,14 @@ impl DictaiteApp {
 
     fn apply_settings_defaults(&mut self) {
         self.origin_language_index = language_index(self.settings.default_language.as_deref());
-        self.translate_enabled = self.settings.translate_by_default;
+        self.translate_enabled =
+            effective_translate(&self.settings, self.settings.translate_by_default);
         let target_idx = language_index(self.settings.default_target_language.as_deref()).max(1);
         self.target_language_index = target_idx;
     }
 
     fn maybe_warn_api_key(&mut self) {
-        if self.openai.is_none() {
+        if effective_live_backend(&self.settings) == LiveBackend::OpenAi && self.openai.is_none() {
             self.error_text = Some("OPENAI_API_KEY not configured".to_string());
         }
     }
@@ -143,18 +149,52 @@ impl DictaiteApp {
         self.tts_clip = None;
         self.tts_voice_id = None;
 
+        self.active_backend = effective_live_backend(&self.settings);
+        if self.settings.backend == Backend::Local && self.active_backend == LiveBackend::OpenAi {
+            self.error_text = Some(
+                "Local transcription is unavailable in this build; using OpenAI Realtime"
+                    .to_string(),
+            );
+        }
+
+        match self.active_backend {
+            LiveBackend::OpenAi => self.start_remote_recording(),
+            LiveBackend::Local => self.start_local_recording(),
+        }
+    }
+
+    fn ensure_live_runtime(&mut self) -> Result<&tokio::runtime::Runtime, AppError> {
+        if self.live_runtime.is_none() {
+            self.live_runtime = Some(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .thread_name("dictaite-realtime")
+                    .build()
+                    .map_err(|err| {
+                        AppError::Message(format!("Realtime runtime unavailable: {err}"))
+                    })?,
+            );
+        }
+        Ok(self
+            .live_runtime
+            .as_ref()
+            .expect("runtime was just created"))
+    }
+
+    fn start_remote_recording(&mut self) {
         let Some(client) = self.openai.clone() else {
             self.error_text = Some("OpenAI client unavailable".to_string());
             self.live_state = LiveState::Error;
             return;
         };
-        let Some(runtime) = &self.live_runtime else {
-            self.error_text = Some("Realtime runtime unavailable".to_string());
+        if let Err(err) = self.ensure_live_runtime() {
+            self.error_text = Some(err.to_string());
             self.live_state = LiveState::Error;
             return;
-        };
+        }
 
-        let translate = self.translate_enabled && self.target_language_index > 0;
+        let translate = effective_translate(&self.settings, self.translate_enabled)
+            && self.target_language_index > 0;
         let source_language = if self.origin_language_index == 0 {
             None
         } else {
@@ -170,7 +210,7 @@ impl DictaiteApp {
         let (rt_event_tx, mut rt_event_rx) = tokio::sync::mpsc::channel(128);
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         let ui_tx = self.live_event_tx.clone();
-        runtime.spawn(async move {
+        self.live_runtime.as_ref().unwrap().spawn(async move {
             while let Some(event) = rt_event_rx.recv().await {
                 let _ = ui_tx.send(event);
             }
@@ -182,16 +222,33 @@ impl DictaiteApp {
             target_language,
         };
         if translate {
-            runtime.spawn(async move {
-                let _ = run_live_translation(config, audio_rx, rt_event_tx, stop_rx).await;
+            let failure_tx = rt_event_tx.clone();
+            self.live_runtime.as_ref().unwrap().spawn(async move {
+                if let Err(err) = run_live_translation(config, audio_rx, rt_event_tx, stop_rx).await
+                {
+                    let _ = failure_tx
+                        .send(RealtimeEvent::Error {
+                            message: err.to_string(),
+                        })
+                        .await;
+                }
             });
         } else {
-            runtime.spawn(async move {
-                let _ = run_live_transcription(config, audio_rx, rt_event_tx, stop_rx).await;
+            let failure_tx = rt_event_tx.clone();
+            self.live_runtime.as_ref().unwrap().spawn(async move {
+                if let Err(err) =
+                    run_live_transcription(config, audio_rx, rt_event_tx, stop_rx).await
+                {
+                    let _ = failure_tx
+                        .send(RealtimeEvent::Error {
+                            message: err.to_string(),
+                        })
+                        .await;
+                }
             });
         }
 
-        match LiveCapture::start(audio_tx, self.live_event_tx.clone()) {
+        match LiveCapture::start(AudioSpec::openai(), audio_tx, self.live_event_tx.clone()) {
             Ok(capture) => {
                 self.live_capture = Some(capture);
                 self.live_stop_tx = Some(stop_tx);
@@ -216,14 +273,115 @@ impl DictaiteApp {
         }
     }
 
+    fn start_local_recording(&mut self) {
+        let source_language = if self.origin_language_index == 0 {
+            None
+        } else {
+            Some(LANGUAGES[self.origin_language_index].code.to_string())
+        };
+        let mut language_hint = source_language;
+        let device_warning = match self.settings.local.device.as_str() {
+            "metal" if !cfg!(feature = "metal") => {
+                Some("Metal is unavailable in this build; using CPU".to_string())
+            }
+            "cuda" if !cfg!(feature = "cuda") => {
+                Some("CUDA is unavailable in this build; using CPU".to_string())
+            }
+            _ => None,
+        };
+        if let Some(warning) = device_warning {
+            self.error_text = Some(warning);
+        }
+        if self.settings.local.model.ends_with(".en")
+            && language_hint.as_deref().is_some_and(|lang| lang != "en")
+        {
+            self.error_text = Some(format!(
+                "Model {} is English-only; using English instead",
+                self.settings.local.model
+            ));
+            language_hint = Some("en".to_string());
+        }
+
+        let engine = match self.create_local_engine() {
+            Ok(engine) => engine,
+            Err(err) => {
+                self.error_text = Some(err.to_string());
+                self.live_state = LiveState::Error;
+                return;
+            }
+        };
+        let spec = engine.audio_spec();
+        let model_path = resolve_model_path(&self.settings.local);
+        if !model_path.is_file() && !cfg!(feature = "test-local-engine") {
+            self.error_text = Some(format!(
+                "Local model '{}' is not available at {}. Open Settings to download or choose it.",
+                self.settings.local.model,
+                model_path.display()
+            ));
+            self.live_state = LiveState::Error;
+            return;
+        }
+        let config = LocalSessionConfig {
+            language_hint,
+            model_path,
+            device: self.settings.local.device.clone(),
+        };
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::channel(32);
+        let mut session = start_local_session(engine, config, audio_rx, self.live_event_tx.clone());
+
+        match LiveCapture::start(spec, audio_tx, self.live_event_tx.clone()) {
+            Ok(capture) => {
+                self.live_capture = Some(capture);
+                self.local_session = Some(session);
+                self.is_recording = true;
+                self.record_started_at = Some(Instant::now());
+                self.live_state = LiveState::Transcribing;
+                self.status_text = "Loading local model...".to_string();
+            }
+            Err(err) => {
+                session.stop();
+                self.live_state = LiveState::Error;
+                self.error_text = Some(err.to_string());
+                self.status_text = "Press to start listening".to_string();
+            }
+        }
+    }
+
+    fn create_local_engine(&self) -> Result<Box<dyn LocalEngine>, AppError> {
+        if self.settings.local.engine != "whisper" {
+            return Err(AppError::Message(format!(
+                "Unsupported local engine '{}'",
+                self.settings.local.engine
+            )));
+        }
+        #[cfg(feature = "local-whisper")]
+        {
+            return Ok(Box::new(crate::local::whisper::WhisperEngine::new()));
+        }
+        #[cfg(all(not(feature = "local-whisper"), feature = "test-local-engine"))]
+        {
+            return Ok(Box::new(crate::local::fake::FakeLocalEngine::new(
+                Vec::new(),
+                Vec::new(),
+            )));
+        }
+        #[allow(unreachable_code)]
+        Err(AppError::Message(
+            "Local transcription support is not compiled into this build".to_string(),
+        ))
+    }
+
     fn stop_recording(&mut self) {
         self.is_recording = false;
         self.record_started_at = None;
-        if let Some(mut capture) = self.live_capture.take() {
-            capture.stop();
-        }
         if let Some(stop_tx) = self.live_stop_tx.take() {
             let _ = stop_tx.send(());
+        }
+        if let Some(mut session) = self.local_session.take() {
+            session.stop();
+        }
+        if let Some(mut capture) = self.live_capture.take() {
+            capture.stop();
         }
         self.live_state = self.live_state.stop();
         self.status_text = "Stopped".to_string();
@@ -302,6 +460,12 @@ impl DictaiteApp {
                     self.transcript = self.source_transcript.clone();
                     self.raw_transcript = Some(self.source_transcript.clone());
                 }
+                RealtimeEvent::SourceUpdate { item_id, text } => {
+                    self.source_assembler.update(item_id.as_deref(), &text);
+                    self.source_transcript = self.source_assembler.text();
+                    self.transcript = self.source_transcript.clone();
+                    self.raw_transcript = Some(self.source_transcript.clone());
+                }
                 RealtimeEvent::TranslationDelta { text } => {
                     self.translated_transcript.push_str(&text);
                     self.transcript = self.translated_transcript.clone();
@@ -321,6 +485,10 @@ impl DictaiteApp {
                 }
                 RealtimeEvent::Error { message } => {
                     self.error_text = Some(message);
+                    if self.active_backend == LiveBackend::Local {
+                        ctx.request_repaint();
+                        continue;
+                    }
                     self.live_state = LiveState::Error;
                     self.status_text = "Live session error".to_string();
                     self.is_recording = false;
@@ -345,7 +513,9 @@ impl DictaiteApp {
     }
 
     fn transcript_for_actions(&self) -> String {
-        if self.translate_enabled && !self.translated_transcript.trim().is_empty() {
+        if effective_translate(&self.settings, self.translate_enabled)
+            && !self.translated_transcript.trim().is_empty()
+        {
             let mut parts = Vec::new();
             if !self.source_transcript.trim().is_empty() {
                 parts.push(format!("Source:\n{}", self.source_transcript.trim()));
@@ -374,7 +544,7 @@ impl DictaiteApp {
         };
         self.tts_task = Some(BackgroundTask::spawn(move || {
             let audio = client.text_to_speech(&text, &voice_id)?;
-            let clip = AudioClip::from_wav_bytes(audio).map_err(AppError::from)?;
+            let clip = AudioClip::from_wav_bytes(audio)?;
             Ok(TtsOutcome { clip, intent })
         }));
     }
@@ -421,6 +591,28 @@ impl DictaiteApp {
         }
     }
 
+    fn poll_model_download(&mut self, ctx: &Context) {
+        let result = self
+            .model_download
+            .as_ref()
+            .and_then(ModelDownload::ready)
+            .cloned();
+        if let Some(result) = result {
+            self.model_download = None;
+            self.model_download_entry = None;
+            match result {
+                Ok(path) => {
+                    self.status_text = format!("Model downloaded to {}", path.display());
+                    self.error_text = None;
+                }
+                Err(err) => self.error_text = Some(err),
+            }
+            ctx.request_repaint();
+        } else if self.model_download.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+    }
+
     fn copy_transcript(&mut self) {
         let text = self.transcript_for_actions();
         if text.trim().is_empty() {
@@ -459,7 +651,9 @@ impl DictaiteApp {
     }
 
     fn play_transcript_audio(&mut self) {
-        let text = if self.translate_enabled && !self.translated_transcript.trim().is_empty() {
+        let text = if effective_translate(&self.settings, self.translate_enabled)
+            && !self.translated_transcript.trim().is_empty()
+        {
             self.translated_transcript.trim()
         } else if !self.source_transcript.trim().is_empty() {
             self.source_transcript.trim()
@@ -527,6 +721,7 @@ impl App for DictaiteApp {
 
         self.poll_live_events(&ctx);
         self.poll_tts(&ctx);
+        self.poll_model_download(&ctx);
         if let Some(player) = &mut self.player {
             player.refresh();
         }
@@ -558,7 +753,12 @@ impl App for DictaiteApp {
                         play_label = "■ Stop";
                     }
                 }
-                if ui.button(play_label).clicked() {
+                let tts_available =
+                    self.settings.backend != Backend::Local || self.openai.is_some();
+                let play_response = ui
+                    .add_enabled(tts_available, egui::Button::new(play_label))
+                    .on_disabled_hover_text("Text-to-speech requires an OpenAI API key");
+                if play_response.clicked() {
                     if let Some(player) = &mut self.player {
                         if player.is_playing() {
                             player.stop();
@@ -645,10 +845,11 @@ impl App for DictaiteApp {
                 });
 
             ui.add_space(8.0);
+            let local_mode = effective_live_backend(&self.settings) == LiveBackend::Local;
             ui.horizontal(|ui| {
                 ui.label("Translate Live");
                 let mut flag = self.translate_enabled;
-                if ui.checkbox(&mut flag, "").changed() {
+                if ui.add_enabled(!local_mode, egui::Checkbox::new(&mut flag, "")).changed() {
                     self.translate_enabled = flag;
                     if !flag {
                         if let Some(original) = &self.raw_transcript {
@@ -658,7 +859,11 @@ impl App for DictaiteApp {
                 }
             });
 
-            if self.translate_enabled {
+            if local_mode {
+                ui.small(
+                    "Local mode supports transcription only. Translation requires the OpenAI Realtime API.",
+                );
+            } else if self.translate_enabled {
                 ui.horizontal(|ui| {
                     ui.label("Target language");
                     egui::ComboBox::from_id_salt("target_lang")
@@ -681,7 +886,7 @@ impl App for DictaiteApp {
             ui.add_space(10.0);
             let width = ui.available_width();
             let height = ui.available_height();
-            if self.translate_enabled {
+            if effective_translate(&self.settings, self.translate_enabled) {
                 let pane_height = (height - 32.0).max(120.0) / 2.0;
                 ui.label("Source transcript");
                 let source_response = ui.add_sized(
@@ -778,9 +983,7 @@ impl<T: Send + 'static> BackgroundTask<T> {
     }
 
     fn try_take(&mut self) -> Option<Result<T, AppError>> {
-        let Some(rx) = self.receiver.as_ref() else {
-            return None;
-        };
+        let rx = self.receiver.as_ref()?;
         match rx.try_recv() {
             Ok(result) => {
                 self.receiver = None;
@@ -798,21 +1001,29 @@ impl<T: Send + 'static> BackgroundTask<T> {
 }
 
 struct SettingsModal {
+    backend: Backend,
     language_index: usize,
     translate_default: bool,
     target_index: usize,
     female_voice_index: usize,
     male_voice_index: usize,
+    local_model: String,
+    local_model_path: Option<std::path::PathBuf>,
+    local_device: String,
 }
 
 impl SettingsModal {
     fn from(settings: &Settings) -> Self {
         Self {
+            backend: settings.backend,
             language_index: language_index(settings.default_language.as_deref()),
             translate_default: settings.translate_by_default,
             target_index: language_index(settings.default_target_language.as_deref()).max(1),
             female_voice_index: voice_index(FEMALE_VOICES, &settings.female_voice),
             male_voice_index: voice_index(MALE_VOICES, &settings.male_voice),
+            local_model: settings.local.model.clone(),
+            local_model_path: settings.local.model_path.clone(),
+            local_device: settings.local.device.clone(),
         }
     }
 
@@ -821,6 +1032,26 @@ impl SettingsModal {
         let mut keep_open = true;
 
         ui.vertical(|ui| {
+            ui.label("Transcription backend");
+            ui.radio_value(&mut self.backend, Backend::Openai, "OpenAI Realtime");
+            let local_response = ui.add_enabled(
+                LOCAL_BACKEND_AVAILABLE,
+                egui::RadioButton::new(self.backend == Backend::Local, "Local model"),
+            );
+            if local_response.clicked() {
+                self.backend = Backend::Local;
+            }
+            if !LOCAL_BACKEND_AVAILABLE {
+                local_response.on_disabled_hover_text(
+                    "Local support is unavailable in this build (enable local-whisper)",
+                );
+                ui.small("Local support is unavailable in this build.");
+            }
+            let mut staged_settings = app.settings.clone();
+            staged_settings.backend = self.backend;
+            let translation_available = effective_translate(&staged_settings, true);
+
+            ui.separator();
             ui.label("Default language");
             egui::ComboBox::from_id_salt("settings_default_language")
                 .selected_text(LANGUAGES[self.language_index].name)
@@ -832,10 +1063,18 @@ impl SettingsModal {
 
             ui.horizontal(|ui| {
                 ui.label("Translate by default");
-                ui.checkbox(&mut self.translate_default, "");
+                ui.add_enabled(
+                    translation_available,
+                    egui::Checkbox::new(&mut self.translate_default, ""),
+                );
             });
 
-            ui.horizontal(|ui| {
+            if self.backend == Backend::Local {
+                ui.small(
+                    "Local mode supports transcription only. Translation requires the OpenAI Realtime API.",
+                );
+            } else {
+                ui.horizontal(|ui| {
                 ui.label("Default target language");
                 egui::ComboBox::from_id_salt("settings_target_language")
                     .selected_text(LANGUAGES[self.target_index].name)
@@ -847,7 +1086,90 @@ impl SettingsModal {
                             ui.selectable_value(&mut self.target_index, idx, lang.name);
                         }
                     });
-            });
+                });
+            }
+
+            if self.backend == Backend::Local {
+                ui.separator();
+                ui.label("Local model");
+                ui.horizontal(|ui| {
+                    ui.label("Engine");
+                    ui.add_enabled(false, egui::Label::new("Whisper"));
+                });
+                let selected_model_label = manifest_entry(&self.local_model)
+                    .map(|entry| entry.display_name)
+                    .unwrap_or(&self.local_model);
+                egui::ComboBox::from_id_salt("settings_local_model")
+                    .selected_text(selected_model_label)
+                    .show_ui(ui, |ui| {
+                        for entry in MODEL_MANIFEST {
+                            ui.selectable_value(
+                                &mut self.local_model,
+                                entry.id.to_string(),
+                                entry.display_name,
+                            );
+                        }
+                    });
+                egui::ComboBox::from_id_salt("settings_local_device")
+                    .selected_text(&self.local_device)
+                    .show_ui(ui, |ui| {
+                        for device in ["auto", "cpu", "metal", "cuda"] {
+                            ui.selectable_value(
+                                &mut self.local_device,
+                                device.to_string(),
+                                device,
+                            );
+                        }
+                    });
+                if ui.button("Choose model file...").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_title("Choose Whisper model")
+                        .pick_file()
+                    {
+                        self.local_model_path = Some(path);
+                    }
+                }
+                let local_settings = crate::settings::LocalSettings {
+                    engine: "whisper".to_string(),
+                    model: self.local_model.clone(),
+                    model_path: self.local_model_path.clone(),
+                    device: self.local_device.clone(),
+                };
+                if let (Some(download), Some(entry)) =
+                    (&app.model_download, app.model_download_entry)
+                {
+                    let (bytes, fraction) = download.progress(entry.size);
+                    ui.add(egui::ProgressBar::new(fraction).text(format!(
+                        "{} / {} MB",
+                        bytes / 1_000_000,
+                        entry.size / 1_000_000
+                    )));
+                    if ui.button("Cancel download").clicked() {
+                        download.cancel();
+                    }
+                } else {
+                    match model_availability(&local_settings) {
+                        ModelAvailability::Ready(path) => {
+                            ui.small(format!("Model ready: {}", path.display()));
+                        }
+                        ModelAvailability::MissingConfiguredPath(path) => {
+                            ui.small(format!("Missing at configured path: {}", path.display()));
+                        }
+                        ModelAvailability::NotDownloaded(_) => {
+                            ui.small(format!("Model '{}' is not downloaded", self.local_model));
+                            if let Some(entry) = manifest_entry(&self.local_model).copied() {
+                                if ui.button("Download").clicked() {
+                                    let destination = model_path("whisper", entry.id);
+                                    app.model_download =
+                                        Some(ModelDownload::start(entry, destination));
+                                    app.model_download_entry = Some(entry);
+                                }
+                            }
+                        }
+                        ModelAvailability::Downloading { .. } => {}
+                    }
+                }
+            }
 
             ui.separator();
 
@@ -895,7 +1217,12 @@ impl SettingsModal {
     }
 
     fn persist(&self, app: &mut DictaiteApp) {
+        let backend_changed = app.settings.backend != self.backend;
+        if backend_changed && app.is_recording {
+            app.stop_recording();
+        }
         let mut settings = app.settings.clone();
+        settings.backend = self.backend;
         settings.default_language = if self.language_index == 0 {
             None
         } else {
@@ -909,6 +1236,10 @@ impl SettingsModal {
         };
         settings.female_voice = FEMALE_VOICES[self.female_voice_index].id.to_string();
         settings.male_voice = MALE_VOICES[self.male_voice_index].id.to_string();
+        settings.local.engine = "whisper".to_string();
+        settings.local.model = self.local_model.clone();
+        settings.local.model_path = self.local_model_path.clone();
+        settings.local.device = self.local_device.clone();
 
         if let Err(err) = save_settings(&settings) {
             app.error_text = Some(err.to_string());
@@ -934,6 +1265,9 @@ fn live_state_text(state: &str) -> String {
             "Connected to live session".to_string()
         }
         "audio.capture.stopped" => "Audio capture stopped".to_string(),
+        "local.loading" => "Loading local model...".to_string(),
+        "local.listening" => "Listening locally...".to_string(),
+        "local.processing" => "Transcribing locally...".to_string(),
         "disconnected" => "Disconnected".to_string(),
         other => format!("Live state: {other}"),
     }

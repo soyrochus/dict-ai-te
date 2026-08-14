@@ -6,7 +6,6 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use rodio::{Decoder as RodioDecoder, Source};
-use serde_json;
 use serde_json::Value;
 
 use crate::error::AppError;
@@ -148,10 +147,10 @@ fn decode_tts_json(value: Value) -> Result<Vec<u8>, AppError> {
         };
         match chunk_to_pcm(&bytes, sample_rate, channels) {
             Ok((mut samples, sr, ch)) => {
-                if sample_rate.map_or(false, |existing| existing != sr) {
+                if sample_rate.is_some_and(|existing| existing != sr) {
                     continue;
                 }
-                if channels.map_or(false, |existing| existing != ch) {
+                if channels.is_some_and(|existing| existing != ch) {
                     continue;
                 }
                 sample_rate = sample_rate.or(Some(sr));
@@ -203,11 +202,9 @@ fn collect_tts_payload(value: &Value, info: &mut TtsPayloadInfo) {
                                 info.mime_type = Some(s.to_string());
                             }
                         }
-                        if key == "format" || key == "audio_format" {
-                            if info.format.is_none() {
-                                if let Some(s) = val.as_str() {
-                                    info.format = Some(s.to_string());
-                                }
+                        if (key == "format" || key == "audio_format") && info.format.is_none() {
+                            if let Some(s) = val.as_str() {
+                                info.format = Some(s.to_string());
                             }
                         }
                     }
@@ -267,7 +264,7 @@ fn raw_pcm_to_samples(
         .ok_or_else(|| AppError::Tts("Missing sample rate for PCM audio chunk".to_string()))?;
     let channels = channels_hint
         .ok_or_else(|| AppError::Tts("Missing channel count for PCM audio chunk".to_string()))?;
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return Err(AppError::Tts(
             "Odd byte length in PCM audio chunk".to_string(),
         ));
@@ -320,7 +317,7 @@ fn wav_to_pcm(bytes: &[u8]) -> Result<(Vec<i16>, u32, u16), AppError> {
 
 fn rodio_to_pcm(decoder: RodioDecoder<Cursor<Vec<u8>>>) -> Result<(Vec<i16>, u32, u16), AppError> {
     let sample_rate = decoder.sample_rate();
-    let channels = decoder.channels() as u16;
+    let channels = decoder.channels();
     let samples: Vec<i16> = decoder.convert_samples::<f32>().map(float_to_i16).collect();
     Ok((samples, sample_rate, channels))
 }

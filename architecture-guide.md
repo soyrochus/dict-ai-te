@@ -27,7 +27,9 @@ This document is a deep-dive into how **dict-ai-te** works. It treats the **Rust
 
 dict-ai-te is a **live dictation and live speech-translation** application. The user presses a button, speaks into the microphone, and sees transcribed (and optionally translated) text accumulate in real time. When done, the transcript can be saved, copied, or read aloud via TTS.
 
-All three implementations share the same external dependency: the **OpenAI Realtime API**, a WebSocket endpoint that accepts raw PCM16 audio and streams back transcription and translation events as JSON. There is no local speech recognition model; the entire STT and translation pipeline runs on OpenAI's infrastructure.
+The Rust reference implementation supports two transcription backends: the **OpenAI Realtime
+API** and an optional on-device Whisper engine. The deprecated Python implementations remain
+OpenAI-only. Translation and TTS always use OpenAI.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -47,10 +49,10 @@ All three implementations share the same external dependency: the **OpenAI Realt
 └─────────────────────────────────────────────────────┘
 ```
 
-The app runs in two **session modes**, selected before recording starts:
+The Rust app selects a backend before recording starts:
 
-- **Transcription** — connects to `wss://api.openai.com/v1/realtime?intent=transcription` using `gpt-4o-transcribe`. Returns source-language transcript deltas.
-- **Translation** — connects to `wss://api.openai.com/v1/realtime?model=gpt-realtime` using `gpt-realtime`. Returns translated text deltas. Both the source transcript and the translation accumulate simultaneously.
+- **OpenAI Realtime** — transcription connects to `intent=transcription`; optional translation connects to `gpt-realtime`.
+- **Local model** — feature-gated Whisper transcription on a dedicated thread, segmented by Silero VAD. Audio never leaves the machine and translation is disabled.
 
 ---
 
@@ -79,6 +81,11 @@ dict-ai-te/
 │       ├── state.rs            ← LiveState enum
 │       ├── transcript.rs       ← TranscriptAssembler
 │       └── transport.rs        ← WebSocket session functions
+│   └── local/
+│       ├── mod.rs              ← LocalEngine trait and blocking session runner
+│       ├── whisper.rs          ← Whisper + Silero VAD engine (feature-gated)
+│       ├── model.rs            ← manifest, resolution, download, verification
+│       └── fake.rs             ← scripted CI engine
 │
 ├── dictaite_core/              ← Python shared library
 │   ├── __init__.py             ← re-exports: Settings, load_settings, synthesize_speech
@@ -134,7 +141,8 @@ All three read from and write to the **same settings file**, so switching betwee
 
 ### 4.1 Rust — `src/audio/live_capture.rs`
 
-The Rust audio pipeline is fully threaded. cpal owns a platform audio stream on one thread; a separate worker thread does conversion and sends chunks to the async Tokio runtime.
+The Rust audio pipeline is fully threaded. cpal owns a platform audio stream on one thread; a
+separate worker downsamples into fixed raw `f32` frames declared by the selected backend.
 
 ```
 cpal stream callback (audio thread)
@@ -146,24 +154,18 @@ cpal stream callback (audio thread)
         ▼
 audio_worker thread
   1. downmix_to_mono(&samples, channels)
-  2. resample_linear(&mono, native_rate → 24 000 Hz)
-  3. accumulate in 'pending' buffer
-  4. when pending ≥ chunk_samples (40 ms worth):
-       pcm16_le(&pending) → raw i16 bytes
-       chunk_pcm16(bytes, 24_000, 40 ms) → Vec<Vec<u8>>
-       base64_pcm16(chunk) → String
-       tokio_mpsc::Sender<String>.blocking_send(chunk)
+  2. resample_linear(&mono, native_rate → AudioSpec.sample_rate)
+  3. buffer across callbacks and emit exact AudioSpec.frame_samples frames
         │
-        ▼
-  tokio async runtime
-  (sends String chunks to the WebSocket session)
+        ├── OpenAI: 24 kHz / 960 samples → PCM16 + base64 in transport → WebSocket
+        └── Local: 16 kHz / 512 samples → Silero VAD + Whisper on inference thread
 ```
 
 Level metering is done atomically: the cpal callback stores `f32::to_bits(max_amplitude)` in an `Arc<AtomicU32>`, which the UI reads on each repaint frame without locking.
 
 Audio format negotiation (`choose_input_config`):
-1. Prefer mono at exactly 24 000 Hz.
-2. Fall back to any channel count at exactly 24 000 Hz.
+1. Prefer mono at the backend's target rate.
+2. Fall back to any channel count at the target rate.
 3. Fall back to mono at the device's maximum rate.
 4. Fall back to any configuration.
 
@@ -214,6 +216,19 @@ The server never touches the audio samples directly; it acts as a trusted relay 
 ## 5. OpenAI Realtime Sessions
 
 Both Rust and Python implement two session functions with identical semantics.
+
+### Local Whisper sessions
+
+`LiveBackend::Local` bypasses `RealtimeSessionConfig` and both WebSocket functions. The capture
+channel is blocking-received by `dictaite-local-inference`; no Tokio runtime is created for the
+local session. Silero evaluates exact 512-sample frames, speech is periodically re-decoded for
+`SourceUpdate`, 600 ms of silence seals a segment with `SourceCompleted`, and continuous speech is
+force-cut at 15 seconds. Segment IDs are monotonic (`local-0`, `local-1`, …).
+
+Known models come from an embedded manifest. Downloads run in a `poll-promise` worker, write a
+`.part` file, verify SHA-256, and atomically rename. A custom `local.model_path` bypasses the
+manifest. The `local-whisper`, `metal`, and `cuda` Cargo features keep all native dependencies out
+of the default build.
 
 ### 5.1 Transcription session
 

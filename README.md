@@ -10,7 +10,9 @@
 - A **Python GTK 4 desktop app** (Linux / macOS)
 - A **Python Flask web app** — same features, accessible from any browser
 
-All three share the same settings file (`~/.dictaite/settings.json`) and connect to the same OpenAI Realtime API backend. The Python implementations are a feature-exact clone of the Rust app.
+All three share the same settings file (`~/.dictaite/settings.json`). The Rust app is the reference
+implementation and can also run transcription fully on-device; the deprecated Python variants
+remain OpenAI-only.
 
 For a deep technical dive into how everything fits together, see the **[Architecture Guide](architecture-guide.md)**.
 
@@ -25,6 +27,7 @@ For a deep technical dive into how everything fits together, see the **[Architec
 ## Features
 
 - **Live transcription** — audio streams directly to OpenAI Realtime (`gpt-4o-transcribe`) and transcribed words appear as you speak.
+- **Optional local transcription (Rust)** — build with `local-whisper` to run Whisper plus Silero VAD on-device with no speech-related network traffic or API key.
 - **Live translation** — optionally route the session through the `gpt-realtime` translation endpoint; source and translated transcripts accumulate simultaneously.
 - **TTS playback** — read back the transcript in a chosen voice via the OpenAI TTS API (`tts-1`).
 - **Audio level meter** — visual level bar during both recording and playback.
@@ -32,7 +35,7 @@ For a deep technical dive into how everything fits together, see the **[Architec
 - **Origin and target language selection** — choose from 20+ languages; auto-detect is the default.
 - **Save, copy, edit** — save the transcript as a `.txt` file, copy it to the clipboard, or edit it directly in the text area.
 - **Shared settings** — default language, voice preferences, and translate-by-default are stored in `~/.dictaite/settings.json` and shared across all app variants.
-- **Zero local models** — all speech recognition and translation run on OpenAI's infrastructure; only an API key is required.
+- **Managed local models** — download a verified model in Settings or choose an existing whisper.cpp GGML model file.
 
 ## Quick Start
 
@@ -164,6 +167,27 @@ cargo run --release
 ./target/release/dict_ai_te
 ```
 
+### Optional local transcription
+
+Local mode is opt-in because `whisper-rs` and Silero VAD add native build dependencies. Install
+CMake, then build with the feature appropriate for the machine:
+
+```bash
+# CPU
+cargo run --release --features local-whisper
+
+# Apple Metal
+cargo run --release --features metal
+
+# NVIDIA CUDA
+cargo run --release --features cuda
+```
+
+Open Settings, select **Local model**, and download `base.en` or `small`, or choose an existing
+GGML model file. Models are stored below `~/.dictaite/models/whisper/<model-id>/`; `DICTAITE_HOME`
+changes the application-home prefix. Local mode is transcription-only, so live translation is
+disabled. TTS still works when `OPENAI_API_KEY` is present.
+
 ---
 
 ## Web UI reference
@@ -209,7 +233,8 @@ Settings are stored in `~/.dictaite/settings.json` and shared between all app va
 
 Legacy TOML configs at `~/.config/dict-ai-te/dict-ai-te_config.toml` are migrated automatically on first launch.
 
-The only required configuration is the OpenAI API key, which can be set via:
+An OpenAI API key is required for the remote backend, translation, and TTS. It is not required for
+local transcription. It can be set via:
 
 - A `.env` file in the project root: `OPENAI_API_KEY=your_key_here`
 - The environment variable `OPENAI_API_KEY`
